@@ -210,7 +210,9 @@ Sub Main()
     ' renvoyait 000 sans atteindre HandleHttpEvent). Le canal de commande passe donc PAR /queue :
     ' HandleHttpEvent discrimine par le CORPS ({cmd:...} vs {keep/purge/items}).
     m.server.AddPostToString({ url_path: "/queue" })
-    EnsureRenderer()                     ' telecharge les sf_rnd_* manquants depuis backend (SD vierge -> auto-provision)
+    ' telecharge les sf_rnd_* manquants depuis backend (SD vierge -> auto-provision). Echec (reseau pas
+    ' encore la) -> m.rndMissing : la boucle reessaie toutes les 30 s puis recharge la page (v54).
+    m.rndMissing = not EnsureRenderer()
     ScanCache()                          ' re-decouvre les sfc_* deja sur SD (persistance reboot) + pose /cached.json
 
     ' ── Infos device natives → /device.json ─────────────────────────────────
@@ -328,7 +330,9 @@ Sub Main()
     ' (catalogue d'abord, statique ensuite) ; les deux absents -> copies SD GARDEES telles quelles
     ' (jamais de repli plat quand un pin existe = pas de MAJ involontaire). Anti-brick inchange :
     ' echec HTTP = fichier SD intact ; primitives deja utilisees partout (roUrlTransfer/GetToFile).
-    dev.autorun_ver = "53"
+    ' v54 = renderer absent au boot (carte faite a la main, reseau lent) : EnsureRenderer en TEMP +
+    ' code 200, reessai toutes les 30 s dans la boucle puis m.html.SetUrl (rechargement). Issue #2.
+    dev.autorun_ver = "54"
     ' P2.1 : occupation disque de la SD (le renderer ne peut pas la lire — objets JS désactivés).
     ' roStorageInfo = API BrightScript STANDARD (≠ les API JS-bridge qui crashaient). GUARDÉ : si
     ' l'objet/la mesure échoue, on n'expose simplement pas le champ (pas de crash). Snapshot au boot
@@ -566,6 +570,7 @@ Sub Main()
     ' video_mode). RotationTransform() = sidecar valide (whitelist) ou "identity" -> jamais de cle corrompue.
     rt = RotationTransform()
     if rt <> "identity" then config.transform = rt
+    m.htmlUrl = url                              ' v54 : rechargement une fois le renderer recupere
     m.html = CreateObject("roHtmlWidget", r, config)
     m.html.SetPort(m.port)
     m.html.AllowJavaScriptUrls({ all: "*" })
@@ -592,6 +597,8 @@ Sub Main()
     ' que si memIntervalMs ecoule. wait(20000) garantit un reveil meme en silence total (parc idle).
     m.memSpan = CreateObject("roTimespan")
     m.memSpan.Mark()
+    m.rndSpan = CreateObject("roTimespan")
+    m.rndSpan.Mark()
     while true
         msg = wait(20000, m.port)
         t = type(msg)
@@ -610,6 +617,19 @@ Sub Main()
         ' Time-gate (s'execute apres un evenement OU un timeout) : mesure memoire periodique +
         ' relance PumpQueue (P2.8 : reprend le prefetch quand une fenetre horaire s'ouvre en idle ;
         ' no-op si un DL est deja en vol ou les files sont vides).
+        ' v54 : renderer absent de la SD au boot (carte faite a la main + reseau lent) -> nouvel essai
+        ' toutes les 30 s ; complet -> la page est rechargee (sinon "Connecting..." a vie). ifs
+        ' IMBRIQUES (BrightScript ne court-circuite pas).
+        if m.rndMissing = true then
+            if m.rndSpan.TotalMilliseconds() >= 30000 then
+                m.rndSpan.Mark()
+                if EnsureRenderer() then
+                    m.rndMissing = false
+                    print "renderer complet -> rechargement de la page"
+                    m.html.SetUrl(m.htmlUrl)
+                end if
+            end if
+        end if
         if m.memSpan.TotalMilliseconds() >= m.memIntervalMs then
             m.memSpan.Mark()
             MemCheck()
@@ -2115,9 +2135,13 @@ End Sub
 ' Rend le player deployable sans staging manuel : un SD vierge se provisionne au 1er boot (online).
 ' Si le fichier existe deja -> on garde la copie SD (sert direct, offline-safe, pas de hang/DL).
 ' GetToFile est BLOQUANT et tourne AVANT Show() -> les fichiers sont la quand le widget les demande.
-Sub EnsureRenderer()
+' v54 : renvoie true quand les 5 fichiers sont sur la SD. Telechargement en TEMP + code 200 exige
+' (avant : GetToFile direct dans sf_rnd_* -> un 404/502 au demarrage devenait un "renderer" que plus
+' rien ne retelechargeait, puisque le fichier existait). Rappele par la boucle tant qu'il manque un
+' fichier (reseau lent a monter au boot : ~4 min sur un HD1024), cf. m.rndMissing.
+Function EnsureRenderer() As Boolean
     m = GetGlobalAA()
-    if m.backend = "" then return
+    if m.backend = "" then return true
     have = {}
     existing = MatchFiles("SD:/", "sf_rnd_*")
     if type(existing) = "roList" then
@@ -2126,16 +2150,30 @@ Sub EnsureRenderer()
         end for
     end if
     names = ["ed25519.js", "signflow.js", "audio_player.js", "player.js", "style.css"]
+    complete = true
     for each f in names
         dest = "sf_rnd_" + f
         if not have.DoesExist(dest) then
+            tmp = "sfrtmp_" + f
             ut = CreateObject("roUrlTransfer")
             ut.SetUrl(m.backend + "/player-chromeos/" + f)
             ut.EnableEncodings(true)
-            ut.GetToFile(dest)
+            code = ut.GetToFile(tmp)
+            ok = false
+            if code = 200 then
+                if ReadAsciiFile(tmp) <> "" then ok = true
+            end if
+            if ok then
+                MoveFile(tmp, dest)
+                print "renderer recupere: "; f
+            else
+                DeleteFile(tmp)
+                complete = false
+            end if
         end if
     end for
-End Sub
+    return complete
+End Function
 
 ' NB Tier 1.5 (refresh renderer auto-update) RETIRE : le routage des roUrlEvent par
 ' SetIdentity/GetSourceIdentity n'est pas fiable sur ce firmware (crash autorun = LED rouge 10x
