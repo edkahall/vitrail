@@ -34,7 +34,7 @@ async def _get_folder(db: AsyncSession, id_org: int, id_folder: int) -> CmsMedia
         )
     )).scalar_one_or_none()
     if f is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dossier introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
     return f
 
 
@@ -175,6 +175,15 @@ async def update_folder(
 ) -> FolderRead:
     folder = await _get_folder(db, current_user.id_org, id_folder)
 
+    if folder.system_key is not None and (
+        (body.folder_name is not None and body.folder_name != folder.folder_name)
+        or ("parent_id" in body.model_fields_set and body.parent_id != folder.parent_id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="System folder: it cannot be renamed or moved",
+        )
+
     if body.folder_name is not None:
         folder.folder_name = body.folder_name
 
@@ -187,7 +196,7 @@ async def update_folder(
             if new_parent.id_folder == folder.id_folder or new_parent.path.startswith(f"{folder.path}."):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Déplacement invalide (dossier dans lui-même ou un descendant)",
+                    detail="Invalid move (folder into itself or one of its descendants)",
                 )
 
         old_path = folder.path
@@ -232,7 +241,7 @@ async def delete_folder(
     if child_count:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Dossier non vide (sous-dossiers). Déplacez ou supprimez-les d'abord.",
+            detail="Folder not empty (subfolders). Move or delete them first.",
         )
     # Les médias du dossier remontent à la racine (FK ondelete=SET NULL).
     await db.delete(folder)
@@ -271,8 +280,8 @@ async def move_media(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    f"« {media.media_name} » appartient à un nœud de gouvernance que vous "
-                    "n'administrez pas — aucun média n'a été déplacé"
+                    f"\"{media.media_name}\" belongs to a governance node you do not "
+                    "administer — no media was moved"
                 ),
             )
     for media in rows:

@@ -106,7 +106,7 @@ async def _get_node(db: AsyncSession, id_org: int, id_node: int) -> CmsGovernanc
         )
     )).scalar_one_or_none()
     if node is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nœud introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
     return node
 
 
@@ -122,7 +122,7 @@ async def _get_visible_node(
     node = await _get_node(db, user.id_org, id_node)
     visible = await visible_node_ids(db, user)
     if visible is not None and id_node not in visible:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nœud introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Node not found")
     return node
 
 
@@ -178,13 +178,13 @@ async def _enforce_structure_edit(
         if not {"CMS_SUPER_ADMIN", "CMS_ORG_ADMIN"}.intersection(role_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Seul un administrateur d'organisation peut créer un nœud racine",
+                detail="Only an organization administrator can create a root node",
             )
         return
     if not await user_can_edit_node(db, user, id_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas ce nœud de gouvernance",
+            detail="You do not administer this governance node",
         )
 
 
@@ -337,7 +337,7 @@ async def update_node(
             if not allowed:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Seul un administrateur d'un nœud parent peut retirer la modération",
+                    detail="Only an administrator of a parent node can remove moderation",
                 )
         node.requires_approval = body.requires_approval
     # Recompilation à pousser (R12) : les restrictions et les plafonds changent ce que le
@@ -349,7 +349,7 @@ async def update_node(
             if family not in _RULE_FAMILIES:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Famille de règle inconnue : {family}",
+                    detail=f"Unknown rule family: {family}",
                 )
             if bool(locked) == _locked_here(node, family):
                 continue
@@ -360,8 +360,8 @@ async def update_node(
             if not locked and not await _is_strict_ancestor_admin(db, current_user, node):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Seul un administrateur d'un nœud parent peut lever une "
-                           "restriction sur les règles",
+                    detail="Only an administrator of a parent node can lift a "
+                           "restriction on rules",
                 )
             current[family] = bool(locked)
         # JSONB : réaffecter un NOUVEAU dict, sinon SQLAlchemy ne voit pas la mutation.
@@ -378,12 +378,12 @@ async def update_node(
         if not await user_can_edit_node(db, current_user, id_node):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Vous n'administrez pas ce nœud",
+                detail="You do not administer this node",
             )
         inherited = await _inherited_caps(db, node)
         labels = {
-            "max_for_children": "Le niveau supérieur limite ce nœud à {cap} contenu(s) par tour.",
-            "max_item_sec": "Le niveau supérieur limite la durée d'un contenu à {cap} s.",
+            "max_for_children": "The level above limits this node to {cap} item(s) per loop.",
+            "max_item_sec": "The level above limits an item's duration to {cap} s.",
         }
         for key, value in caps_wanted.items():
             cap = inherited[key]
@@ -395,7 +395,7 @@ async def update_node(
             if value is not None and value < 1:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Un plafond doit être au moins de 1 (laisser vide = aucun plafond).",
+                    detail="A cap must be at least 1 (leave empty = no cap).",
                 )
             setattr(node, key, value)
         touched_governance = True
@@ -431,7 +431,7 @@ async def _reparent_node(
     if new_parent_id == node.id_node:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Un nœud ne peut pas être son propre parent.",
+            detail="A node cannot be its own parent.",
         )
     await _enforce_structure_edit(db, user, new_parent_id)
 
@@ -449,7 +449,7 @@ async def _reparent_node(
         if new_parent.id_node in {n.id_node for n in subtree}:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Un nœud ne peut pas être déplacé sous un de ses propres descendants.",
+                detail="A node cannot be moved under one of its own descendants.",
             )
 
     old_prefix = node.path
@@ -481,7 +481,7 @@ async def delete_node(
     if has_child is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Nœud non vide : supprimez d'abord les sous-nœuds",
+            detail="Node is not empty: delete its child nodes first",
         )
 
     has_sched = (await db.execute(
@@ -492,7 +492,7 @@ async def delete_node(
     if has_sched is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Des schedules sont rattachés à ce nœud",
+            detail="Schedules are attached to this node",
         )
 
     # R12 : capturer les players ancrés AVANT la suppression (cascade) — supprimer le nœud
@@ -653,7 +653,7 @@ async def add_assignment(
     if body.target_type not in _VALID_TARGET_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="target_type doit être player | group | site | site_group",
+            detail="target_type must be player | group | site | site_group",
         )
     # Vérifie que la cible appartient à l'org (cross-tenant = 404)
     await _check_target_org(db, current_user.id_org, body.target_type, body.target_id)
@@ -706,12 +706,12 @@ async def add_assignments_batch(
         return await _resolve_assignment_names(db, current_user.id_org, id_node)
     if len(body) > 200:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="200 cibles au maximum par envoi.")
+                            detail="At most 200 targets per request.")
     for item in body:
         if item.target_type not in _VALID_TARGET_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="target_type doit être player | group | site | site_group",
+                detail="target_type must be player | group | site | site_group",
             )
         await _check_target_org(db, current_user.id_org, item.target_type, item.target_id)
         await _enforce_target_in_scope(db, current_user, item.target_type, item.target_id)
@@ -778,7 +778,7 @@ async def _check_target_org(db: AsyncSession, id_org: int, target_type: str, tar
             select(CmsSite.id_site).where(CmsSite.id_site == target_id, CmsSite.id_org == id_org)
         )).scalar_one_or_none()
     if ok is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cible introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
 
 
 # ── Administrateurs de nœud (immutabilité §XVIII Phase 2) ────────────────────
@@ -841,9 +841,9 @@ async def _enforce_target_in_scope(
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         detail=(
-            "Cible hors de votre périmètre de gouvernance : " + ", ".join(names)
-            + ". Ces écrans sont déjà rattachés à un nœud que vous n'administrez pas — "
-              "seul son administrateur (ou l'administrateur d'organisation) peut les déplacer."
+            "Target outside your governance scope: " + ", ".join(names)
+            + ". These players are already attached to a node you do not administer — "
+              "only its administrator (or the organization administrator) can move them."
         ),
     )
 
@@ -1064,7 +1064,7 @@ async def add_node_admin(
         )
     )).scalar_one_or_none()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     exists = (await db.execute(
         select(CmsGovernanceNodeAdmin).where(
@@ -1217,7 +1217,7 @@ async def _enforce_rule_write(
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Ce paramètre est défini par le niveau supérieur (délégation non accordée).",
+            detail="This setting is defined by the level above (delegation not granted).",
         )
     if rule_type != "item_count":
         return
@@ -1235,7 +1235,7 @@ async def _enforce_rule_write(
     if wanted is not None and cap is not None and wanted > cap:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Le niveau supérieur limite ce nœud à {cap} contenu(s) par tour.",
+            detail=f"The level above limits this node to {cap} item(s) per loop.",
         )
 
 
@@ -1250,7 +1250,7 @@ async def create_rule(
     if body.rule_type not in _VALID_RULE_TYPES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"rule_type invalide ({', '.join(sorted(_VALID_RULE_TYPES))})",
+            detail=f"Invalid rule_type ({', '.join(sorted(_VALID_RULE_TYPES))})",
         )
     await _enforce_rule_write(db, current_user, node, body.rule_type, body.params)
     # D5 : une seule règle par type et par nœud (garde explicite → 409 lisible avant la
@@ -1264,7 +1264,7 @@ async def create_rule(
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Une règle de ce type existe déjà sur ce nœud (une seule par type).",
+            detail="A rule of this type already exists on this node (one per type).",
         )
     rule = CmsDelegationRule(
         id_node=id_node, rule_type=body.rule_type, params=body.params or {}, soft_cut=body.soft_cut
@@ -1283,7 +1283,7 @@ async def _get_rule(db: AsyncSession, id_org: int, id_rule: int) -> CmsDelegatio
         .where(CmsDelegationRule.id_rule == id_rule, CmsGovernanceNode.id_org == id_org)
     )).scalar_one_or_none()
     if rule is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Règle introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     return rule
 
 
@@ -1679,7 +1679,7 @@ def _parse_at(at: Optional[str], tz_name: str | None = None) -> datetime:
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Paramètre 'at' invalide (attendu ISO 8601)",
+                detail="Invalid 'at' parameter (ISO 8601 expected)",
             )
     return local_now(tz_name)
 
@@ -1689,7 +1689,7 @@ async def node_budget(
     id_node: int,
     current_user: Annotated[CmsUser, Depends(require_permission("governance", "read"))],
     db: Annotated[AsyncSession, Depends(get_db)],
-    at: Optional[str] = Query(None, description="Instant local ISO (défaut: maintenant)"),
+    at: Optional[str] = Query(None, description="Local ISO timestamp (default: now)"),
 ) -> BudgetStatusRead:
     """Consommation **planifiée** du budget d'un nœud (contenu propre du nœud, actif à `at`).
 

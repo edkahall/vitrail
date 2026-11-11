@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
+import { useFolderLabel } from '@/lib/folderLabel'
 import {
   Folder, FolderPlus, Layers, Inbox, Pencil, Trash2, Plus, ChevronRight, ChevronDown,
 } from 'lucide-react'
@@ -28,6 +29,7 @@ export default function FolderTree({
   fill?: boolean
 }) {
   const t = useTranslations()
+  const { label: folderLabel } = useFolderLabel()
   const qc = useQueryClient()
 
   const { data: folders = [] } = useQuery<FolderRead[]>({
@@ -88,7 +90,7 @@ export default function FolderTree({
     if (n && n !== f.folder_name) renameM.mutate({ id: f.id_folder, folder_name: n })
   }
   const del = (f: FolderRead) => {
-    if (confirm(t('media.folder_delete_confirm', { name: f.folder_name }))) deleteM.mutate(f.id_folder)
+    if (confirm(t('media.folder_delete_confirm', { name: folderLabel(f) }))) deleteM.mutate(f.id_folder)
   }
 
   const rowCls = (active: boolean) =>
@@ -116,12 +118,14 @@ export default function FolderTree({
             )}
             <button className="flex items-center gap-2 flex-1 min-w-0 text-left" onClick={() => onSelect(f.id_folder)}>
               <Folder className="w-4 h-4 shrink-0" />
-              <span className="truncate">{f.folder_name}</span>
+              <span className="truncate">{folderLabel(f)}</span>
               {f.media_count > 0 && <span className="text-[10px] text-gray-400">{f.media_count}</span>}
             </button>
             <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-sf shrink-0">
               <button data-write-action onClick={() => addChild(f.id_folder)} title={t('media.folder_new_sub')} className="text-gray-300 hover:text-accent"><Plus className="w-3.5 h-3.5" /></button>
-              <button data-write-action onClick={() => rename(f)} title={t('common.rename')} className="text-gray-300 hover:text-accent"><Pencil className="w-3.5 h-3.5" /></button>
+              {!f.system_key && (
+                <button data-write-action onClick={() => rename(f)} title={t('common.rename')} className="text-gray-300 hover:text-accent"><Pencil className="w-3.5 h-3.5" /></button>
+              )}
               <button data-write-action onClick={() => del(f)} title={t('common.delete')} className="text-gray-300 hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
             </span>
           </div>

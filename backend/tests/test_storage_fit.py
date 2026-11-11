@@ -40,7 +40,7 @@ def test_the_real_incident_is_now_refused() -> None:
     assert r["verdict"] == "insufficient"
     assert r["missing_count"] == 6
     # Le message doit dire la CONSÉQUENCE, pas seulement « pas de place ».
-    assert "diffusera" in r["reason"]
+    assert "will play only part" in r["reason"]
 
 
 def test_already_cached_media_are_not_counted_twice() -> None:
@@ -91,7 +91,7 @@ def test_unknown_capacity_is_never_silently_ok() -> None:
     r = storage_fit.assess_player(p, {1: 5 * GB}, [1])
     assert r["verdict"] == "unknown"
     assert r["free_bytes"] is None
-    assert "ne remonte pas" in r["reason"]
+    assert "does not report" in r["reason"]
 
     bare = _player()                                  # capabilities vide
     assert storage_fit.assess_player(bare, {1: 1}, [1])["verdict"] == "unknown"

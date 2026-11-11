@@ -8,8 +8,8 @@ from app.api.v1.router import api_router
 # échoue fermé (mieux arrêté que compromis). Toute instance réelle définit CMS_JWT_SECRET.
 if settings.CMS_JWT_SECRET in ("", "changeme"):
     raise RuntimeError(
-        "CMS_JWT_SECRET non configuré (valeur par défaut détectée). "
-        "Définissez un secret fort avant de démarrer."
+        "CMS_JWT_SECRET not configured (default value detected). "
+        "Set a strong secret before starting."
     )
 
 app = FastAPI(

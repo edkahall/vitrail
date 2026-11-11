@@ -99,7 +99,7 @@ def _badge(left, top, width, height, font_vh, min_vh, weight):
 # ── Catalogue de templates (built-in) ────────────────────────────────────────────
 TEMPLATES: dict[str, dict] = {
     "fresh": {
-        "label": "Frais / Alimentaire",
+        "label": "Fresh / Food",
         "theme": {"accent": "#3F8F4F", "ink": "#1D2B3A", "paper": "#F8F7F5",
                   "badge_bg": "#E4572E", "badge_ink": "#FFFFFF", "font": "Inter"},
         "layouts": {
@@ -122,7 +122,7 @@ TEMPLATES: dict[str, dict] = {
         },
     },
     "premium": {
-        "label": "Premium / Gourmand",
+        "label": "Premium / Gourmet",
         "theme": {"accent": "#C9A227", "ink": "#F3EEE4", "paper": "#1C1E2A",
                   "badge_bg": "#C9A227", "badge_ink": "#1C1E2A", "font": "Inter"},
         "layouts": {
@@ -208,12 +208,12 @@ def resolve_template(template_id: str, fmt: str, resolution: str, inputs: dict,
     reste PUR : il reçoit un dict, il n'interroge jamais la base."""
     tpl = TEMPLATES.get(template_id)
     if tpl is None:
-        raise PromoError(f"template inconnu: {template_id}")
+        raise PromoError(f"unknown template: {template_id}")
     if fmt not in tpl["layouts"]:
-        raise PromoError(f"format non supporté: {fmt}")
+        raise PromoError(f"unsupported format: {fmt}")
     res = (resolution or "fhd").lower()
     if fmt not in RESOLUTIONS or res not in RESOLUTIONS[fmt]:
-        raise PromoError(f"résolution non supportée: {resolution}")
+        raise PromoError(f"unsupported resolution: {resolution}")
     width, height = RESOLUTIONS[fmt][res]
     layout = tpl["layouts"][fmt]
     theme = {**tpl["theme"], **(theme_overrides or {})}

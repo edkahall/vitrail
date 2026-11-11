@@ -279,8 +279,8 @@ async def execute_assistant_action(
     """
     steps = verify_batch(body.token, current_user)
     if steps is None:
-        return {"ok": False, "error": "Action expirée ou invalide. Reformulez votre demande."}
+        return {"ok": False, "error": "Action expired or invalid. Please rephrase your request."}
     # Anti-rejeu : un token confirmé ne peut être exécuté qu'UNE fois (single-use).
     if not await consume_action_token(body.token):
-        return {"ok": False, "error": "Action déjà exécutée. Reformulez votre demande."}
+        return {"ok": False, "error": "Action already executed. Please rephrase your request."}
     return await execute_batch(db, current_user, steps)

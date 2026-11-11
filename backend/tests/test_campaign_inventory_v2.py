@@ -175,7 +175,7 @@ async def test_publish_blocked_by_player_cap(
 
     r = await client.post(f"/api/v1/campaigns/{camp.id_campaign}/status",
                           headers=_headers(admin), json={"action": "publish"})
-    assert r.status_code == 409 and "Surbooking" in r.json()["detail"]
+    assert r.status_code == 409 and "Overbooking" in r.json()["detail"]
 
 
 @pytest.mark.asyncio

@@ -262,3 +262,35 @@ test('an edit shortcut opens the drawer directly, in both views', async ({ page 
   await expect(page.getByTestId('media-viewer')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: /Alpha clip/ })).toBeVisible()
 })
+
+// Dossier système des annonceurs (migr 0131) : stocké sous le nom de repli anglais
+// « Advertisers », repéré par `system_key`. Son nom affiché suit la langue de l'interface,
+// jusque dans le chemin de ses sous-dossiers, et il ne propose pas de renommage.
+test('system advertisers folder shows a translated name and cannot be renamed', async ({ page, context }) => {
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await setup(page)
+  await context.addCookies([{ name: 'locale', value: 'fr', url: BASE }])
+  const SYS = [
+    { id_folder: 10, id_org: 1, parent_id: null, folder_name: 'Advertisers', system_key: 'advertisers', depth: 0, path: '10', child_count: 1, media_count: 0, full_path: 'Advertisers', created_at: '2026-01-01T00:00:00Z' },
+    { id_folder: 11, id_org: 1, parent_id: 10, folder_name: 'Acme', system_key: null, depth: 1, path: '10.11', child_count: 0, media_count: 1, full_path: 'Advertisers / Acme', created_at: '2026-01-01T00:00:00Z' },
+    { id_folder: 12, id_org: 1, parent_id: null, folder_name: 'Advertisers', system_key: null, depth: 0, path: '12', child_count: 0, media_count: 0, full_path: 'Advertisers', created_at: '2026-01-01T00:00:00Z' },
+  ]
+  await page.route('**/api/v1/media/folders**', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SYS) }))
+  await page.goto(`${BASE}/media`)
+
+  const tree = page.getByTestId('folder-tree')
+  const sysRow = tree.getByRole('button', { name: 'Annonceurs', exact: true })
+  await expect(sysRow).toBeVisible()
+  // Témoin : le dossier UTILISATEUR homonyme garde son nom tel quel.
+  await expect(tree.getByRole('button', { name: 'Advertisers', exact: true })).toBeVisible()
+
+  // Pas de renommage sur la ligne système ; il reste sur la ligne utilisateur.
+  const rowOf = (b: import('@playwright/test').Locator) => b.locator('xpath=..')
+  await expect(rowOf(sysRow).getByTitle('Renommer')).toHaveCount(0)
+  await expect(rowOf(tree.getByRole('button', { name: 'Advertisers', exact: true })).getByTitle('Renommer')).toHaveCount(1)
+
+  // Le fil d'Ariane du sous-dossier traduit aussi l'ancêtre système.
+  await sysRow.click()
+  await expect(page.getByLabel(/Breadcrumb|Fil d/)).toContainText('Annonceurs')
+})

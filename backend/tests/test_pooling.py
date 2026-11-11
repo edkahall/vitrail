@@ -50,7 +50,7 @@ def test_au_dela_du_budget_la_garde_REFUSE_au_lieu_de_bricoler():
     """
     trop = max_workers_for_budget(BUDGET) + 1
     sizes = derive_pool_sizes(trop, BUDGET)
-    with pytest.raises(RuntimeError, match="Budget de connexions dépassé"):
+    with pytest.raises(RuntimeError, match="Connection budget exceeded"):
         assert_pool_budget_fits(trop, connections_per_process(*sizes), BUDGET)
 
 
@@ -87,7 +87,7 @@ def test_le_budget_ne_descend_jamais_sous_un_plancher_utilisable():
     plancher, et c'est la GARDE qui refuse le démarrage en nommant les leviers."""
     sizes = derive_pool_sizes(8, 8)
     assert min(sizes) >= 1
-    with pytest.raises(RuntimeError, match="Budget de connexions dépassé"):
+    with pytest.raises(RuntimeError, match="Connection budget exceeded"):
         assert_pool_budget_fits(8, connections_per_process(*sizes), 8)
 
 

@@ -87,7 +87,7 @@ async def _enforce_media_node_edit(db: AsyncSession, user: CmsUser, media: CmsMe
     if not await user_can_edit_node(db, user, media.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas le nœud de gouvernance de ce média",
+            detail="You do not administer this media's governance node",
         )
 
 
@@ -101,7 +101,7 @@ async def _validate_media_node_org(db: AsyncSession, user: CmsUser, id_node: int
     )).scalar_one_or_none()
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Nœud de gouvernance introuvable")
+                            detail="Governance node not found")
 
 # Domaines autorisés pour l'import stock (anti-SSRF) : on ne télécharge que depuis les CDN
 # du provider choisi, jamais une URL arbitraire fournie par le client.
@@ -180,7 +180,7 @@ async def upload_media(
 ) -> MediaRead:
     """Upload un fichier vers MinIO en streaming (multipart ≥8MB), crée l'entrée cms_media."""
     if not file.filename and not file.size:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fichier vide")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
 
     content_type = file.content_type or "application/octet-stream"
     media_type = _detect_media_type(content_type, file.filename)
@@ -188,10 +188,10 @@ async def upload_media(
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail=(
-                f"Type de fichier non supporté : {content_type}. "
-                "Types acceptés : images (JPEG, PNG, GIF, WebP, SVG), "
-                "vidéos (MP4, MOV, WebM), audio (MP3, AAC, WAV), "
-                "documents (PDF, PPTX), packages HTML (ZIP, HTML)."
+                f"Unsupported file type: {content_type}. "
+                "Accepted types: images (JPEG, PNG, GIF, WebP, SVG), "
+                "videos (MP4, MOV, WebM), audio (MP3, AAC, WAV), "
+                "documents (PDF, PPTX), HTML packages (ZIP, HTML)."
             ),
         )
     storage_key = make_storage_key(current_user.id_org, file.filename or "upload")
@@ -241,8 +241,8 @@ async def media_stats(
     _: Annotated[CmsUser, Depends(require_permission("media", "read"))],
     db: Annotated[AsyncSession, Depends(get_db)],
     source: Optional[str] = Query(None),
-    id_folder: Optional[int] = Query(None, description="Filtrer sur ce dossier"),
-    unfiled: bool = Query(False, description="Médias non classés (id_folder IS NULL)"),
+    id_folder: Optional[int] = Query(None, description="Filter on this folder"),
+    unfiled: bool = Query(False, description="Unfiled media (id_folder IS NULL)"),
 ) -> MediaStats:
     """Comptes par type sur TOUTE la bibliothèque (indépendant de la pagination)."""
     stmt = select(CmsMedia.media_type, func.count()).where(CmsMedia.is_deleted == False)  # noqa: E712
@@ -265,9 +265,9 @@ async def list_media(
     media_type: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
-    id_folder: Optional[int] = Query(None, description="Filtrer sur ce dossier"),
-    subtree: bool = Query(False, description="Avec id_folder : inclure les sous-dossiers"),
-    unfiled: bool = Query(False, description="Médias non classés (id_folder IS NULL)"),
+    id_folder: Optional[int] = Query(None, description="Filter on this folder"),
+    subtree: bool = Query(False, description="With id_folder: include subfolders"),
+    unfiled: bool = Query(False, description="Unfiled media (id_folder IS NULL)"),
     offset: int = Query(0, ge=0),
     limit: int = Query(500, ge=1, le=2000),
 ) -> list[MediaListItem]:
@@ -470,7 +470,7 @@ def _normalize_isrc(raw: str | None) -> str | None:
     if not _ISRC_RE.match(cleaned):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ISRC invalide — format attendu : CC-XXX-YY-NNNNN (12 caractères)",
+            detail="Invalid ISRC — expected format: CC-XXX-YY-NNNNN (12 characters)",
         )
     return cleaned
 
@@ -537,7 +537,7 @@ async def _get_media_visible(db: AsyncSession, user: CmsUser, id_media: int) -> 
         stmt = stmt.where(clause)
     media = (await db.execute(stmt)).scalar_one_or_none()
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     return media
 
 
@@ -545,7 +545,7 @@ async def _get_media_visible(db: AsyncSession, user: CmsUser, id_media: int) -> 
 async def media_usage_summary(
     current_user: Annotated[CmsUser, Depends(require_permission("media", "read"))],
     db: Annotated[AsyncSession, Depends(get_db)],
-    ids: str = Query(..., description="Identifiants séparés par des virgules"),
+    ids: str = Query(..., description="Comma-separated IDs"),
 ) -> dict:
     """« Combien d'écrans ? » pour un LOT de médias — affiché en permanence sur les
     vignettes (demande d'Ed). Le DÉTAIL nommé reste servi par `/usage`, au survol.
@@ -557,7 +557,7 @@ async def media_usage_summary(
         wanted = [int(x) for x in ids.split(",") if x.strip()][:500]
     except ValueError:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Identifiants invalides")
+                            detail="Invalid IDs")
     if not wanted:
         return {}
 
@@ -624,13 +624,13 @@ async def update_media_encode_mode(
     if body.encode_mode not in ("auto", "passthrough"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="encode_mode invalide (auto|passthrough)",
+            detail="Invalid encode_mode (auto|passthrough)",
         )
     media = await _get_media_editable(db, current_user, id_media)
     if media.media_type not in ("video", "audio"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="encode_mode ne s'applique qu'aux médias vidéo/audio",
+            detail="encode_mode only applies to video/audio media",
         )
     media.encode_mode = body.encode_mode
     _reprocess(media)
@@ -674,7 +674,7 @@ async def rename_media(
     name = body.media_name.strip()
     if not name:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="nom vide"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty name"
         )
     media = await _get_media_editable(db, current_user, id_media)
     old_name = media.media_name
@@ -709,7 +709,7 @@ async def assign_media_governance_node(
     if not await user_can_edit_node(db, current_user, body.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas le nœud de gouvernance cible",
+            detail="You do not administer the target governance node",
         )
     # N2 : détacher (→ NULL) fait sortir le média de la gouvernance — ancêtre STRICT ou
     # org-admin seulement, même règle que playlists et programmes.
@@ -718,8 +718,8 @@ async def assign_media_governance_node(
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Seul un administrateur d'un nœud parent peut détacher "
-                   "ce média de la gouvernance",
+            detail="Only an administrator of a parent node can detach "
+                   "this media from governance",
         )
     old = media.id_governance_node
     media.id_governance_node = body.id_governance_node
@@ -765,21 +765,21 @@ async def replace_media(
     media = await _get_media_editable(db, current_user, id_media)
 
     if not file.filename and not file.size:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fichier vide")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
 
     content_type = file.content_type or "application/octet-stream"
     new_type = _detect_media_type(content_type, file.filename)
     if new_type is None:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Type de fichier non supporté : {content_type}.",
+            detail=f"Unsupported file type: {content_type}.",
         )
     if new_type != media.media_type:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"Le remplacement doit conserver le même type de média "
-                f"(attendu : {media.media_type}, reçu : {new_type})."
+                f"The replacement must keep the same media type "
+                f"(expected: {media.media_type}, received: {new_type})."
             ),
         )
 
@@ -903,7 +903,7 @@ async def decide_encode(
     if media.transcode_status != "awaiting_decision":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ce média n'attend aucune décision d'encodage",
+            detail="This media is not awaiting an encoding decision",
         )
     meta = dict(media.media_metadata or {})
     pending = dict(meta.get("encode_decision") or {})
@@ -918,7 +918,7 @@ async def decide_encode(
             # grand que la source) produirait un encodage qui ne résout pas le problème.
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Profil inconnu pour ce média (proposés : {', '.join(options) or 'aucun'})",
+                detail=f"Unknown profile for this media (offered: {', '.join(options) or 'none'})",
             )
         downscale_box = int(opt["box"])
     elif band == "refuse":
@@ -928,8 +928,8 @@ async def decide_encode(
         if not {"CMS_SUPER_ADMIN", "CMS_ORG_ADMIN"}.intersection(roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Encodage estimé au-delà de la limite : réservé à un administrateur "
-                       "de l'organisation, ou choisissez une définition inférieure",
+                detail="Estimated encoding exceeds the limit: reserved for an organization "
+                       "administrator, or choose a lower resolution",
             )
 
     meta["encode_decision"] = {
@@ -1080,7 +1080,7 @@ async def isrc_lookup(
     """
     norm = _normalize_isrc(isrc)
     if norm is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="ISRC requis")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="ISRC required")
     empty = IsrcLookupResult(found=False, isrc=norm)
     try:
         async with httpx.AsyncClient(timeout=8) as http:
@@ -1149,7 +1149,7 @@ async def stock_search(
         return await _pexels_search(q, per_page)
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="provider doit être 'unsplash' ou 'pexels'",
+        detail="provider must be 'unsplash' or 'pexels'",
     )
 
 
@@ -1163,7 +1163,7 @@ async def stock_import(
     if body.provider not in _STOCK_HOST_SUFFIXES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="provider doit être 'unsplash' ou 'pexels'",
+            detail="provider must be 'unsplash' or 'pexels'",
         )
 
     # Anti-SSRF (audit 2026-06-24) : `full_url` est fourni par le client → sans garde, le serveur
@@ -1178,7 +1178,7 @@ async def stock_import(
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="URL source non autorisée",
+            detail="Source URL not allowed",
         )
 
     async with httpx.AsyncClient(timeout=30, follow_redirects=False) as http:
@@ -1186,7 +1186,7 @@ async def stock_import(
     if resp.status_code != 200:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Impossible de télécharger l'asset stock",
+            detail="Could not download the stock asset",
         )
 
     content = resp.content
@@ -1303,7 +1303,7 @@ async def download_media(
     # « lire », elle ne peut pas être plus permissive que la liste.
     media = await _get_media_visible(db, current, id_media)
     if not media.storage_key:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     name = media.media_name or "download"
     ext = media.storage_key.rsplit(".", 1)[-1] if "." in media.storage_key else ""
     if ext and not name.lower().endswith(f".{ext.lower()}"):
@@ -1352,12 +1352,12 @@ async def generate_rendition_endpoint(
     media = await _get_media_editable(db, current_user, id_media)
     if media.media_type != "video":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Les renditions ne s'appliquent qu'aux vidéos")
+                            detail="Renditions only apply to videos")
     from app.workers.media_worker import RENDITION_PROFILES
     prof = RENDITION_PROFILES.get(body.profile)
     if prof is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"Profil de rendition inconnu : {body.profile}")
+                            detail=f"Unknown rendition profile: {body.profile}")
     # Profil de DOWNSCALE (même codec h264) : refus si la source n'est pas plus grande que
     # la cible (artefact inutile). Profil de TRANSCODE codec (ex. hevc_4k, même résolution) :
     # la valeur est le changement de codec → pas de contrainte de taille. Les profils ROTÉS
@@ -1368,7 +1368,7 @@ async def generate_rendition_endpoint(
             and max(media.width, media.height) <= prof["box"]):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="La source n'est pas plus grande que le profil demandé",
+            detail="The source is not larger than the requested profile",
         )
 
     rend = (await db.execute(
@@ -1416,7 +1416,7 @@ async def delete_rendition(
         )
     )).scalar_one_or_none()
     if rend is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rendition introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rendition not found")
 
     storage_key = rend.storage_key
     await db.delete(rend)
@@ -1479,7 +1479,7 @@ async def media_deletion_impact(
         select(CmsMedia).where(CmsMedia.id_media == id_media, CmsMedia.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     return _public_impact(await media_deletion.analyze(db, media))
 
 

@@ -51,13 +51,13 @@ def _embed_batch(client: httpx.Client, texts: list[str], model: str) -> list[lis
         vectors = [r["embedding"] for r in rows]
         if len(vectors) != len(texts):
             raise EmbeddingError(
-                f"réponse incomplète : {len(vectors)} vecteurs pour {len(texts)} textes"
+                f"incomplete response: {len(vectors)} vectors for {len(texts)} texts"
             )
         return vectors
     except EmbeddingError:
         raise
     except Exception as exc:  # noqa: BLE001 — on enveloppe toute erreur réseau/format
-        raise EmbeddingError(f"échec embeddings via {settings.CMS_LITELLM_URL}: {exc}") from exc
+        raise EmbeddingError(f"embeddings failed via {settings.CMS_LITELLM_URL}: {exc}") from exc
 
 
 def embed_texts(

@@ -75,7 +75,7 @@ async def _get_request_or_404(
         )
     )).scalar_one_or_none()
     if req is None or (not caps["reviewer"] and req.submitted_by != user.id_user):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demande introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
     return req
 
 
@@ -118,7 +118,7 @@ async def approvals_dashboard(
     caps = await _actor_caps(db_worker, current_user)
     if not (caps["reviewer"] or caps["submitter"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Permission refusée : approvals")
+                            detail="Permission denied: approvals")
     base = (select(CmsApprovalRequest.status, func.count())
             .where(CmsApprovalRequest.id_org == current_user.id_org)
             .group_by(CmsApprovalRequest.status))
@@ -157,7 +157,7 @@ async def list_approvals(
     caps = await _actor_caps(db_worker, current_user)
     if not (caps["reviewer"] or caps["submitter"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Permission refusée : approvals")
+                            detail="Permission denied: approvals")
     q = (select(CmsApprovalRequest)
          .where(CmsApprovalRequest.id_org == current_user.id_org)
          .order_by(CmsApprovalRequest.submitted_at.desc()).limit(limit))
@@ -200,7 +200,7 @@ async def _export_rows(
     caps = await _actor_caps(db_worker, user)
     if not (caps["reviewer"] or caps["submitter"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Permission refusée : approvals")
+                            detail="Permission denied: approvals")
     q = (select(CmsApprovalRequest)
          .where(CmsApprovalRequest.id_org == user.id_org)
          .order_by(CmsApprovalRequest.submitted_at.desc()).limit(1000))
@@ -238,12 +238,13 @@ async def export_approvals_csv(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
 ) -> Response:
     rows = await _export_rows(db, db_worker, current_user, status_filter)
-    content = approvals_export.approvals_csv(rows)
+    content = approvals_export.approvals_csv(rows, locale=current_user.locale)
     stamp = datetime.now(UTC).strftime("%Y%m%d")
+    filename = approvals_export.export_filename("csv", stamp, current_user.locale)
     return Response(
         content="﻿" + content,  # BOM : Excel ouvre l'UTF-8 correctement
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="approvals_{stamp}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -266,11 +267,13 @@ async def export_approvals_pdf(
         org_name=org_name, rows=rows,
         generated_at=now.strftime("%Y-%m-%d %H:%M UTC"),
         status_filter=status_filter,
+        locale=current_user.locale,
     )
+    filename = approvals_export.export_filename("pdf", now.strftime("%Y%m%d"),
+                                                current_user.locale)
     return Response(
         content=pdf, media_type="application/pdf",
-        headers={"Content-Disposition":
-                 f'attachment; filename="approvals_{now.strftime("%Y%m%d")}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -284,7 +287,7 @@ async def get_approval(
     caps = await _actor_caps(db_worker, current_user)
     if not (caps["reviewer"] or caps["submitter"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Permission refusée : approvals")
+                            detail="Permission denied: approvals")
     req = await _get_request_or_404(db, current_user, id_request, caps)
     detail = ApprovalDetail.model_validate((await _enrich(db, [req]))[0].model_dump())
     # Le reviewer voit CE qu'il approuve : paramètres commerciaux + cibles nommées +
@@ -341,7 +344,7 @@ async def _do_transition(
     req = await _get_request_or_404(db, user, id_request, caps)
     if action == "resubmit" and not caps["admin"] and req.submitted_by != user.id_user:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Seul le soumetteur peut resoumettre")
+                            detail="Only the submitter can resubmit")
     # N5 (audit 2026-07-27) : DÉCIDER sur du contenu gouverné exige d'administrer un nœud
     # PARENT, et personne ne valide sa propre soumission. Mesuré en base : demandes 22/23
     # avec submitted_by = reviewed_by = 37.
@@ -372,7 +375,7 @@ async def _do_transition(
             except playlist_publish.DraftApplyError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Sous-playlist invalide : {exc}") from exc
+                    detail=f"Invalid sub-playlist: {exc}") from exc
             await approvals_svc.mark_published(db, user, "playlist", req.resource_id)
             published_playlist = True
 
@@ -461,12 +464,12 @@ async def delete_approval(
     caps = await _actor_caps(db_worker, current_user)
     if not caps["reviewer"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Permission refusée : approvals")
+                            detail="Permission denied: approvals")
     req = await _get_request_or_404(db, current_user, id_request, caps)
     if req.status in approvals_svc.ACTIVE_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Demande active — rejeter ou annuler avant de supprimer")
+            detail="Active request — reject or cancel it before deleting")
     await db.execute(sa_delete(CmsApprovalComment).where(
         CmsApprovalComment.id_request == id_request))
     db.add(CmsAuditLog(
@@ -490,12 +493,12 @@ async def add_comment(
     caps = await _actor_caps(db_worker, current_user)
     if not (caps["reviewer"] or caps["submitter"]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Permission refusée : approvals")
+                            detail="Permission denied: approvals")
     req = await _get_request_or_404(db, current_user, id_request, caps)
     text_ = (body.comment or "").strip()
     if not text_:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Commentaire vide")
+                            detail="Empty comment")
     comment = CmsApprovalComment(
         id_request=req.id_request, id_org=req.id_org, id_user=current_user.id_user,
         comment_text=text_, action=None,

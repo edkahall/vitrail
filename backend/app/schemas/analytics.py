@@ -96,7 +96,7 @@ class ShareLinkCreate(BaseModel):
                 # Accepte IP nue ("81.2.3.4") ou CIDR ("192.168.1.0/24").
                 net = ipaddress.ip_network(item, strict=False)
             except ValueError as exc:
-                raise ValueError(f"CIDR invalide : {item}") from exc
+                raise ValueError(f"Invalid CIDR: {item}") from exc
             cleaned.append(str(net))
         return cleaned or None
 

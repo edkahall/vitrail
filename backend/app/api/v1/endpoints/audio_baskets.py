@@ -72,7 +72,7 @@ async def _get_basket_or_404(db: AsyncSession, user: CmsUser, id_basket: int) ->
         stmt = stmt.where(_clause)
     basket = (await db.execute(stmt)).scalar_one_or_none()
     if basket is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Panier introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio basket not found")
     return basket
 
 
@@ -91,7 +91,7 @@ async def _get_basket_editable(
     if not await user_can_edit_node(db, user, basket.id_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Vous n'administrez pas le nœud de gouvernance de « {basket.basket_name} »",
+            detail=f"You do not administer the governance node of '{basket.basket_name}'",
         )
     return basket
 
@@ -199,11 +199,11 @@ async def _validate_node_org(db: AsyncSession, user: CmsUser, id_node: int | Non
         )
     )).scalar_one_or_none()
     if ok is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nœud de gouvernance introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Governance node not found")
     if not await user_can_edit_node(db, user, id_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas ce nœud de gouvernance",
+            detail="You do not administer this governance node",
         )
 
 
@@ -312,7 +312,7 @@ async def delete_basket(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[CmsUser, Depends(get_current_user)],
     _: Annotated[None, Depends(require_permission("audio_baskets", "configure"))],
-    force: bool = Query(False, description="Détacher les programmes/événements et supprimer"),
+    force: bool = Query(False, description="Detach schedules/events, then delete"),
 ) -> None:
     """Supprime le panier — avec les mêmes garde-fous que les templates (A5, audit 29/07).
 
@@ -331,13 +331,13 @@ async def delete_basket(
     events = await audio_basket_sync.events_using(db, current_user.id_org, id_basket)
 
     if (scheds or events) and not force:
-        used_by = [f"« {s.schedule_name} »" for s in scheds] + [f"« {e.event_name} »" for e in events]
+        used_by = [f"'{s.schedule_name}'" for s in scheds] + [f"'{e.event_name}'" for e in events]
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"« {basket.basket_name} » est diffusé par " + ", ".join(used_by[:5])
-                + (f" et {len(used_by) - 5} autre(s)" if len(used_by) > 5 else "")
-                + " — ces diffusions perdraient ce panier."
+                f"'{basket.basket_name}' is used by " + ", ".join(used_by[:5])
+                + (f" and {len(used_by) - 5} more" if len(used_by) > 5 else "")
+                + " — they would lose this basket."
             ),
         )
 
@@ -410,12 +410,12 @@ async def add_basket_item(
         stmt = stmt.where(_clause)
     media = (await db.execute(stmt)).scalar_one_or_none()
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     # Un panier audio ne diffuse que du son pur : on refuse image/vidéo (contenus visuels).
     if media.media_type != "audio":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Seuls les médias audio peuvent être ajoutés à un panier audio",
+            detail="Only audio media can be added to an audio basket",
         )
     item = CmsAudioBasketItem(
         id_basket=id_basket,
@@ -533,7 +533,7 @@ async def update_basket_item(
         )
     )).first()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     item, media = row
     changed = sorted(body.model_dump(exclude_unset=True).keys())
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -566,7 +566,7 @@ async def delete_basket_item(
         )
     )).scalar_one_or_none()
     if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     db.add(_audit(current_user, "remove_item", id_basket,
                   {"id_item": id_item, "id_media": item.id_media}))
     await db.delete(item)
@@ -591,7 +591,7 @@ async def _get_player_in_scope(db: AsyncSession, user: CmsUser, id_player: int) 
     )).scalar_one_or_none()
     scope = await user_player_scope(db, user)   # None = aucune restriction
     if player is None or (scope is not None and id_player not in scope):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     return player
 
 
@@ -633,7 +633,7 @@ async def set_player_baskets(
     if total > 100:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"La somme des ratios actifs ({total}%) dépasse 100%",
+            detail=f"The sum of active ratios ({total}%) exceeds 100%",
         )
 
     # Vérifie que tous les paniers appartiennent à l'org
@@ -649,7 +649,7 @@ async def set_player_baskets(
         if invalid:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Paniers introuvables : {sorted(invalid)}",
+                detail=f"Baskets not found: {sorted(invalid)}",
             )
         # A2 — cette table N'EST QUE la couche d'override opérateur (§19.3) : elle sert à
         # RETIRER un panier programmé ou à changer son ratio. Sur un panier OBLIGATOIRE,
@@ -659,8 +659,8 @@ async def set_player_baskets(
         if forced:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=("Panier obligatoire — son état et son ratio ne se règlent pas par "
-                        "écran : " + ", ".join(f"« {n} »" for n in forced)),
+                detail=("Mandatory basket — its state and ratio cannot be set per "
+                        "player: " + ", ".join(f"'{n}'" for n in forced)),
             )
 
     # Remplace intégralement la config du player (delete + recreate)

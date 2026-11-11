@@ -778,3 +778,86 @@ async def test_verify_reports_chain_from_when_archived(
     assert resp.status_code == 200, resp.text
     # period_end de l'archive = début de la fenêtre chaude vérifiable
     assert resp.json()["chain_from"] == "2026-06-26"
+
+
+# ── Langue des documents (profil du demandeur, défaut anglais) ─────────────────
+
+def _uncompressed_pdf(monkeypatch) -> None:
+    """Désactive la compression des flux reportlab : le texte devient lisible dans les octets."""
+    from reportlab import rl_config
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+
+
+_PDF_REPORT = {
+    "org_name": "Org", "from_date": "2026-06-01", "until_date": "2026-06-01",
+    "generated_at": "2026-06-02 10:00 UTC", "total_plays": 3, "total_screen_off": 1,
+    "total_covered": 1, "merkle_root": "ab" * 32, "scope_label": "S",
+    "players": [{"player_name": "P1", "plays": 3, "duration_sec": 30, "screen_off": 1,
+                 "covered": 1, "signed": 2, "unsigned": 1, "signature_invalid": 0,
+                 "chain_valid": True, "chain_head": "cd" * 32, "merkle_root": "ef" * 32}],
+}
+
+
+def test_pop_report_pdf_locale_default_english_and_german(monkeypatch) -> None:
+    from app.services.pop_report import build_pop_report_pdf
+    _uncompressed_pdf(monkeypatch)
+    en = build_pop_report_pdf(_PDF_REPORT)
+    assert b"Total plays" in en and b"Chain valid" in en and b"Total diffusions" not in en
+    de = build_pop_report_pdf(_PDF_REPORT, locale="de")
+    assert b"Wiedergaben gesamt" in de and b"Kette g" in de and b"Total plays" not in de
+    fr = build_pop_report_pdf(_PDF_REPORT, locale="fr-FR")
+    assert b"Total diffusions" in fr
+
+
+def test_pop_doc_texts_parity_and_archive_label() -> None:
+    from app.services import doc_i18n
+    from app.services.pop_report import DOC_TEXTS, csv_header
+    keys = set(DOC_TEXTS["en"])
+    for loc in doc_i18n.SUPPORTED_LOCALES:
+        assert set(DOC_TEXTS[loc]) == keys, loc
+        header = csv_header(loc)
+        assert len(header) == 8
+        assert all(h.isascii() and " " not in h for h in header), loc
+    # Archive journalière (worker, aucun utilisateur) → anglais.
+    assert doc_i18n.tr(DOC_TEXTS, None, "scope_daily_archive") == "Proof of Play archive (daily)"
+
+
+async def _set_org_users_locale(db_session: AsyncSession, id_org: int, locale: str) -> None:
+    await db_session.execute(update(CmsUser).where(CmsUser.id_org == id_org).values(locale=locale))
+    await db_session.commit()
+
+
+async def test_pop_plays_csv_follows_profile_locale(
+    client: AsyncClient, player_token: str, admin_token: str,
+    db_session: AsyncSession, org: CmsOrganization,
+) -> None:
+    await _seed_two_plays(client, player_token)
+    url = "/api/v1/pop/plays.csv?from=2026-06-01&until=2026-06-01"
+    h = {"Authorization": f"Bearer {admin_token}"}
+    en = await client.get(url, headers=h)
+    assert en.status_code == 200
+    first = en.text.splitlines()[0]
+    assert "Played_at_UTC" in first and "Diffuse_le_UTC" not in first
+    assert ",no," in en.text or ",yes," in en.text
+
+    await _set_org_users_locale(db_session, org.id_org, "fr")
+    fr = await client.get(url, headers=h)
+    assert "Diffuse_le_UTC" in fr.text.splitlines()[0]
+    assert ",non," in fr.text or ",oui," in fr.text
+
+
+async def test_pop_report_pdf_follows_profile_locale(
+    client: AsyncClient, player_token: str, admin_token: str,
+    db_session: AsyncSession, org: CmsOrganization, monkeypatch,
+) -> None:
+    await _seed_two_plays(client, player_token)
+    _uncompressed_pdf(monkeypatch)
+    url = "/api/v1/pop/report.pdf?from=2026-06-01&until=2026-06-01"
+    h = {"Authorization": f"Bearer {admin_token}"}
+    en = await client.get(url, headers=h)
+    assert en.status_code == 200
+    assert b"All players of the organization" in en.content
+    await _set_org_users_locale(db_session, org.id_org, "de")
+    de = await client.get(url, headers=h)
+    assert b"Alle Player der Organisation" in de.content
+    assert b"All players of the organization" not in de.content

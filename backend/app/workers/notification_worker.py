@@ -65,20 +65,20 @@ def retry_webhook(url: str, payload: dict, secret: str, event_type: str,
         url, payload, secret=secret, event_type=event_type, attempt=attempt)
 
     if ok:
-        _log(id_org, id_rule, event_type, "sent", f"{detail} (tentative {attempt})")
+        _log(id_org, id_rule, event_type, "sent", f"{detail} (attempt {attempt})")
         return {"ok": True, "attempt": attempt}
 
     if not retryable or attempt >= MAX_ATTEMPTS:
-        reason = "abandon" if not retryable else "tentatives epuisees"
+        reason = "gave up" if not retryable else "attempts exhausted"
         _log(id_org, id_rule, event_type, "failed",
-             f"{detail} (tentative {attempt}/{MAX_ATTEMPTS}, {reason})")
+             f"{detail} (attempt {attempt}/{MAX_ATTEMPTS}, {reason})")
         return {"ok": False, "attempt": attempt, "retryable": retryable}
 
     # `attempt` vaut 2 pour le premier réessai → l'attente suivante est à l'indice
     # attempt-1 dans la table des délais.
     countdown = RETRY_BACKOFF_S[min(attempt - 1, len(RETRY_BACKOFF_S) - 1)]
     _log(id_org, id_rule, event_type, "failed",
-         f"{detail} (tentative {attempt}/{MAX_ATTEMPTS}, nouvel essai dans {countdown} s)")
+         f"{detail} (attempt {attempt}/{MAX_ATTEMPTS}, retrying in {countdown} s)")
     celery_app.send_task(
         "app.workers.notification_worker.retry_webhook",
         args=[url, payload, secret, event_type, id_org, id_rule, attempt + 1],

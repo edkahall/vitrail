@@ -84,13 +84,13 @@ class FirmwareRequired(Exception):
         self.minimum = minimum
         self.families = families
         self.player_names = player_names
-        fams = ", ".join(sorted(families)) or "inconnue"
+        fams = ", ".join(sorted(families)) or "unknown"
         names = ", ".join(player_names[:5]) + ("…" if len(player_names) > 5 else "")
         super().__init__(
-            f"Cette version de renderer exige un firmware BrightSign ≥ {minimum}, or aucun "
-            f"firmware épinglé n'y répond pour la famille « {fams} » ({names}). Téléchargez le "
-            f".bsfw sur le site BrightSign, importez-le via Réglages → Firmware, épinglez-le, "
-            f"puis relancez ce déploiement — il orchestrera firmware puis renderer."
+            f"This renderer version requires BrightSign firmware ≥ {minimum}, but no "
+            f"pinned firmware meets it for the family \"{fams}\" ({names}). Download the "
+            f".bsfw from the BrightSign website, import it via Settings → Firmware, pin it, "
+            f"then rerun this deployment — it will roll out the firmware, then the renderer."
         )
 
 

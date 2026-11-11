@@ -404,7 +404,7 @@ async def test_org_quotas_configurables_et_limits(
     r = await client.post(f"/api/v1/portal/campaigns/{cid}/creatives",
                           headers=_headers(user),
                           files={"file": ("big.png", big, "image/png")})
-    assert r.status_code == 413 and "1 Mo" in r.json()["detail"]
+    assert r.status_code == 413 and "1 MB" in r.json()["detail"]
 
     # Quota org = 1 créatif : on en force 1 en base → l'upload suivant = 409
     m = CmsMedia(id_org=org.id_org, media_name="one", media_type="image",
@@ -419,7 +419,7 @@ async def test_org_quotas_configurables_et_limits(
     r = await client.post(f"/api/v1/portal/campaigns/{cid}/creatives",
                           headers=_headers(user),
                           files={"file": ("s.png", io.BytesIO(b"\x89PNG0"), "image/png")})
-    assert r.status_code == 409 and "1 créatifs max" in r.json()["detail"]
+    assert r.status_code == 409 and "1 creatives max" in r.json()["detail"]
 
 
 @pytest.mark.asyncio

@@ -68,6 +68,6 @@ def validate_tz_or_raise(v: str | None) -> str | None:
         return None
     if not is_valid_tz(v):
         raise ValueError(
-            f"Fuseau horaire inconnu : {v!r} (attendu un nom IANA, ex. 'Europe/Paris')"
+            f"Unknown time zone: {v!r} (expected an IANA name, e.g. 'Europe/Paris')"
         )
     return v

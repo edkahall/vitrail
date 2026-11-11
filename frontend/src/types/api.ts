@@ -194,6 +194,8 @@ export interface FolderRead {
   media_count: number
   /** Chemin lisible ancêtres compris (« Video / Divers ») — lève l'ambiguïté des homonymes. */
   full_path: string
+  /** System folder (`advertisers`): visible name translated by `useFolderLabel`, cannot be renamed or moved. */
+  system_key?: string | null
   created_at: string
 }
 

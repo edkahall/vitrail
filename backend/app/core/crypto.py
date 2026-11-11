@@ -34,11 +34,11 @@ class VaultDecryptError(RuntimeError):
 def _fernet() -> Fernet:
     key = settings.CMS_VAULT_KEY
     if not key:
-        raise VaultKeyMissing("CMS_VAULT_KEY n'est pas configurée")
+        raise VaultKeyMissing("CMS_VAULT_KEY is not configured")
     try:
         return Fernet(key.encode() if isinstance(key, str) else key)
     except (ValueError, TypeError) as exc:
-        raise VaultKeyMissing(f"CMS_VAULT_KEY invalide: {exc}") from exc
+        raise VaultKeyMissing(f"CMS_VAULT_KEY invalid: {exc}") from exc
 
 
 def vault_available() -> bool:
@@ -60,4 +60,4 @@ def decrypt_secret(token: str) -> str:
     try:
         return _fernet().decrypt(token.encode()).decode()
     except InvalidToken as exc:
-        raise VaultDecryptError("secret illisible (clé de coffre changée ?)") from exc
+        raise VaultDecryptError("unreadable secret (vault key changed?)") from exc

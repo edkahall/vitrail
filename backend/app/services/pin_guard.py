@@ -69,7 +69,7 @@ async def verify_pin_or_raise(db: AsyncSession, user: CmsUser, pin: str | None) 
         if locked > now:
             raise HTTPException(
                 status_code=status.HTTP_423_LOCKED,
-                detail=(f"Trop d'essais : PIN verrouillé jusqu'à "
+                detail=(f"Too many attempts: PIN locked until "
                         f"{locked.strftime('%H:%M')} UTC."),
             )
         # Verrou expiré : on repart d'une ardoise propre.
@@ -79,8 +79,8 @@ async def verify_pin_or_raise(db: AsyncSession, user: CmsUser, pin: str | None) 
     if not user.assistant_pin_hash:
         raise HTTPException(
             status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail=("Cette action en masse exige un PIN. Définissez-le dans votre profil "
-                    "(carte « Messagerie »)."),
+            detail=("This bulk action requires a PIN. Set it in your profile "
+                    "(\"Messaging\" card)."),
         )
 
     if pin and verify_password(pin, user.assistant_pin_hash):
@@ -98,11 +98,11 @@ async def verify_pin_or_raise(db: AsyncSession, user: CmsUser, pin: str | None) 
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
-            detail=f"Trop d'essais : PIN verrouillé {PIN_LOCK_MINUTES} minutes.",
+            detail=f"Too many attempts: PIN locked for {PIN_LOCK_MINUTES} minutes.",
         )
     remaining = PIN_MAX_ATTEMPTS - user.assistant_pin_attempts
     await db.commit()
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail=f"PIN incorrect — {remaining} essai(s) restant(s).",
+        detail=f"Incorrect PIN — {remaining} attempt(s) left.",
     )

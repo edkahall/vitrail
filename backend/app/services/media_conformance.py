@@ -90,7 +90,7 @@ def evaluate(metadata: dict[str, Any]) -> dict[str, Any]:
     decodable = (not codec) or codec in _KNOWN_CODECS
     checks["codec"] = {"value": codec or None, "ok": decodable}
     if codec and not decodable:
-        reasons.append(f"Codec « {codec} » non pris en charge par les players.")
+        reasons.append(f"Codec \"{codec}\" is not supported by the players.")
 
     br = video.get("bitrate_kbps")
     ceil = bitrate_ceiling_kbps(codec, video.get("width"), video.get("height"))
@@ -98,8 +98,8 @@ def evaluate(metadata: dict[str, Any]) -> dict[str, Any]:
     checks["bitrate"] = {"value_kbps": br, "ceiling_kbps": ceil, "ok": br_ok}
     if not br_ok:
         reasons.append(
-            f"Bitrate {br} kbps au-dessus du plafond conseillé {ceil} kbps "
-            "(risque d'underrun du décodeur sur les players faibles)."
+            f"Bitrate {br} kbps above the recommended ceiling of {ceil} kbps "
+            "(risk of decoder underrun on low-end players)."
         )
 
     # ── Sync-readiness ───────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ def evaluate(metadata: dict[str, Any]) -> dict[str, Any]:
         "ok": cfr,
     }
     if cfr is False:
-        reasons.append("Framerate variable (VFR) : la bascule synchronisée à la frame ne tiendra pas.")
+        reasons.append("Variable frame rate (VFR): frame-accurate synchronized switching will not hold.")
 
     gop = video.get("gop") or {}
     gop_sec = gop.get("max_gop_sec")
@@ -118,14 +118,14 @@ def evaluate(metadata: dict[str, Any]) -> dict[str, Any]:
     checks["gop"] = {"max_gop_sec": gop_sec, "max_allowed_sec": GOP_MAX_SEC, "ok": gop_ok}
     if gop_ok is False:
         reasons.append(
-            f"Keyframes espacées de {gop_sec:.1f} s (> {GOP_MAX_SEC:g} s) : "
-            "seek/resync imprécis, synchro LAN non garantie."
+            f"Keyframes {gop_sec:.1f} s apart (> {GOP_MAX_SEC:g} s): "
+            "imprecise seek/resync, LAN sync not guaranteed."
         )
 
     faststart = video.get("faststart")
     checks["faststart"] = {"value": faststart, "ok": faststart if faststart is not None else None}
     if faststart is False:
-        reasons.append("Pas de faststart (atome moov en fin de fichier) : démarrage et seek lents.")
+        reasons.append("No faststart (moov atom at end of file): slow start and seek.")
 
     # ── Verdict ──────────────────────────────────────────────────────────────
     if codec and not decodable:

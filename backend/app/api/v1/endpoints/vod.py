@@ -101,13 +101,13 @@ async def _validate_players(
     if missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Player(s) introuvable(s) dans l'organisation : {sorted(missing)}",
+            detail=f"Player(s) not found in the organization: {sorted(missing)}",
         )
     sites = {p.id_site for p in players}
     if len(sites) > 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tous les players d'une config VOD doivent appartenir au même site (id_site).",
+            detail="All players of a VOD config must belong to the same site (id_site).",
         )
     return players, (next(iter(sites)) if sites else None)
 
@@ -121,7 +121,7 @@ async def _validate_site(db: AsyncSession, id_org: int, id_site: int | None) -> 
     if id_site is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Un ciblage par site exige un id_site.",
+            detail="Site targeting requires an id_site.",
         )
     exists = (await db.execute(
         select(CmsSite.id_site).where(CmsSite.id_site == id_site, CmsSite.id_org == id_org)
@@ -129,7 +129,7 @@ async def _validate_site(db: AsyncSession, id_org: int, id_site: int | None) -> 
     if exists is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Site introuvable dans l'organisation : {id_site}",
+            detail=f"Site not found in the organization: {id_site}",
         )
     return id_site
 
@@ -154,14 +154,14 @@ async def _validate_medias(
     if missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Média(s) introuvable(s) dans l'organisation : {sorted(missing)}",
+            detail=f"Media not found in the organization: {sorted(missing)}",
         )
     bad = [m.id_media for m in medias if m.media_type not in _ALLOWED_TYPES]
     if bad:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=("Seuls les médias visuels (vidéo/image/document) et l'entrée HDMI "
-                    f"sont supportés en VOD : {sorted(bad)}"),
+            detail=("Only visual media (video/image/document) and the HDMI input "
+                    f"are supported in VOD: {sorted(bad)}"),
         )
     # Préserve l'ordre d'entrée.
     return [by_id[mid] for mid in uniq]
@@ -235,12 +235,12 @@ async def _validate_vod_node(db: AsyncSession, user: CmsUser, id_node: int | Non
     )).scalar_one_or_none()
     if ok is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Nœud de gouvernance introuvable")
+                            detail="Governance node not found")
 
 
 def _get_or_404(cfg: CmsVodConfig | None) -> CmsVodConfig:
     if cfg is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Config VOD introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="VOD config not found")
     return cfg
 
 
@@ -276,7 +276,7 @@ async def _enforce_vod_targets_in_scope(
         names = ", ".join(b["target_name"] or f"#{b['target_id']}" for b in bad)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Cible hors du périmètre du nœud « {node.node_name} » : {names}.",
+            detail=f"Target outside the scope of node '{node.node_name}': {names}.",
         )
 
 
@@ -353,7 +353,7 @@ async def create_vod_config(
         players, id_site = await _validate_players(db, current_user.id_org, body.id_players)
     medias = await _validate_medias(db, current_user.id_org, body.id_medias)
     await _validate_vod_node(db, current_user, body.id_governance_node)
-    await assert_can_edit_node(db, current_user, body.id_governance_node, "cette VOD")
+    await assert_can_edit_node(db, current_user, body.id_governance_node, "this VOD config")
     await _enforce_vod_targets_in_scope(
         db, current_user.id_org, body.id_governance_node,
         body.target_mode, id_site, [p.id_player for p in players],
@@ -408,13 +408,13 @@ async def update_vod_config(
 
     # Gouvernance §XVIII phase 4 : administrer le nœud ACTUEL, puis le nœud CIBLE en cas
     # de déplacement ; détacher est réservé à un nœud PARENT (N2).
-    await assert_can_edit_node(db, current_user, cfg.id_governance_node, "cette VOD")
+    await assert_can_edit_node(db, current_user, cfg.id_governance_node, "this VOD config")
     if "id_governance_node" in body.model_fields_set:
         await _validate_vod_node(db, current_user, body.id_governance_node)
         await assert_can_edit_node(db, current_user, body.id_governance_node,
-                                   "le nœud de destination")
+                                   "the destination node")
         if body.id_governance_node is None:
-            await assert_can_detach(db, current_user, cfg.id_governance_node, "cette VOD")
+            await assert_can_detach(db, current_user, cfg.id_governance_node, "this VOD config")
         cfg.id_governance_node = body.id_governance_node
 
     # Cible AVANT mutation : les players qui perdent la config doivent être resynchronisés
@@ -437,7 +437,7 @@ async def update_vod_config(
         # Bascule site→players sans liste : la cible deviendrait vide en silence.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Passer en ciblage par players exige de fournir id_players.",
+            detail="Switching to player targeting requires id_players.",
         )
     elif body.id_players is not None:
         players, id_site = await _validate_players(db, current_user.id_org, body.id_players)
@@ -484,7 +484,7 @@ async def delete_vod_config(
             CmsVodConfig.id_vod == id_vod, CmsVodConfig.id_org == current_user.id_org
         )
     )).scalar_one_or_none())
-    await assert_can_edit_node(db, current_user, cfg.id_governance_node, "cette VOD")
+    await assert_can_edit_node(db, current_user, cfg.id_governance_node, "this VOD config")
 
     affected = await _current_player_ids(db, cfg)
     # ON DELETE CASCADE purge media/players ; on supprime la config explicitement.
@@ -578,12 +578,12 @@ async def play_vod_now(
         CmsVodConfigMedia.id_vod == id_vod, CmsVodConfigMedia.id_media == body.id_media))).first()
     if in_config is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Ce média n'appartient pas à cette config VOD.")
+                            detail="This media does not belong to this VOD config.")
     media = (await db.execute(select(CmsMedia).where(
         CmsMedia.id_media == body.id_media, CmsMedia.id_org == current_user.id_org,
         CmsMedia.is_deleted == False, CmsMedia.is_blocked == False))).scalar_one_or_none()  # noqa: E712
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable ou bloqué.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found or blocked.")
 
     # Cibles = players de la config, restreints au sous-ensemble demandé.
     config_player_ids = await _current_player_ids(db, cfg)
@@ -596,7 +596,7 @@ async def play_vod_now(
     targets = config_player_ids if not body.id_players else (config_player_ids & set(body.id_players))
     if not targets:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Aucun player cible valide dans cette config.")
+                            detail="No valid target player in this config.")
 
     players = (await db.execute(select(CmsPlayer).where(CmsPlayer.id_player.in_(targets)))).scalars().all()
 
@@ -611,7 +611,7 @@ async def play_vod_now(
         if not capable:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Aucun player cible avec entrée HDMI physique (BrightSign XT/4K1142/XD1230).",
+                detail="No target player with a physical HDMI input (BrightSign XT/4K1142/XD1230).",
             )
         hdmi_mode = "stop" if body.mode == "stop" else "start"
         r = aioredis.from_url(settings.REDIS_URL)

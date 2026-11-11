@@ -114,24 +114,24 @@ def assess_player(
     # (3) pas de capacité remontée ⇒ on le DIT, on ne suppose pas que ça tient.
     if not isinstance(free, (int, float)):
         return {**base, "verdict": "unknown",
-                "reason": "Cet écran ne remonte pas encore son espace disponible "
-                          "(version de player antérieure au contrôle de stockage)."}
+                "reason": "This screen does not report its free space yet "
+                          "(player version older than the storage check)."}
 
     if required == 0:
-        return {**base, "verdict": "ok", "reason": "Tout le contenu est déjà en cache."}
+        return {**base, "verdict": "ok", "reason": "All content is already cached."}
 
     # (2) même réserve que le frein embarqué.
     usable = float(free) - RESERVE_BYTES
     if required > usable:
         return {**base, "verdict": "insufficient",
-                "reason": "Le contenu à télécharger dépasse l'espace disponible : "
-                          "l'écran ne pourra pas tout mettre en cache et diffusera "
-                          "une partie seulement."}
+                "reason": "The content to download exceeds the free space: "
+                          "the screen will not be able to cache everything and will play "
+                          "only part of it."}
     if usable > 0 and (usable - required) / usable < TIGHT_RATIO:
         return {**base, "verdict": "tight",
-                "reason": "Ça tient, mais de justesse : le moindre ajout de contenu "
-                          "fera basculer cet écran."}
-    return {**base, "verdict": "ok", "reason": "L'espace disponible est suffisant."}
+                "reason": "It fits, but only just: any additional content "
+                          "will push this screen over the limit."}
+    return {**base, "verdict": "ok", "reason": "There is enough free space."}
 
 
 async def assess(

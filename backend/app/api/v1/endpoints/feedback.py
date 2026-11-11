@@ -53,11 +53,11 @@ async def upload_feedback_screenshot(
         )
     content = await file.read()
     if not content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fichier vide")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file")
     if len(content) > _SCREENSHOT_MAX_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Capture trop volumineuse (max 5 Mo)",
+            detail="Screenshot too large (max 5 MB)",
         )
     key = f"{_feedback_prefix(current_user.id_org)}{uuid.uuid4().hex}.{ext}"
     await upload_file(content, key, file.content_type or "application/octet-stream")
@@ -141,7 +141,7 @@ async def update_feedback(
         select(CmsFeedback).where(CmsFeedback.id_feedback == id_feedback)
     )).scalar_one_or_none()
     if fb is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Retour introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found")
     values = body.model_dump(exclude_none=True)
     if values:
         from datetime import datetime

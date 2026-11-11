@@ -372,7 +372,7 @@ async def test_invite_links_existing_user_with_guards(
         f"/api/v1/advertisers/{data['adv_a']}/users",
         headers=org_admin_headers, json={"email": admin_email},
     )
-    assert r.status_code == 409 and "administrateur" in r.json()["detail"]
+    assert r.status_code == 409 and "administrator" in r.json()["detail"]
 
     # Email d'une AUTRE org → 409 générique (pas de rattachement cross-org)
     other_org = CmsOrganization(org_name="Other", org_slug=f"other-{uuid.uuid4().hex[:8]}")

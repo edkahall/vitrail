@@ -17,22 +17,22 @@ NEGATIVE_PROMPT = (
 
 # Ambiances built-in (id → libellé FR + fragment de prompt EN optimisé).
 AMBIANCES: list[dict] = [
-    {"id": "fresh", "label": "Frais / Marché",
+    {"id": "fresh", "label": "Fresh / Market",
      "prompt": "fresh food market ambiance, soft natural daylight, clean minimal surface, "
                "subtle bokeh, airy and bright"},
-    {"id": "gourmand", "label": "Gourmand / Boulangerie",
+    {"id": "gourmand", "label": "Gourmet / Bakery",
      "prompt": "warm cozy bakery ambiance, golden hour light, rustic wooden surface, "
                "shallow depth of field, appetizing mood"},
-    {"id": "premium", "label": "Premium / Luxe",
+    {"id": "premium", "label": "Premium / Luxury",
      "prompt": "elegant dark studio backdrop, subtle gold bokeh, soft rim light, "
                "luxurious minimal mood, high-end"},
-    {"id": "festif", "label": "Festif",
+    {"id": "festif", "label": "Festive",
      "prompt": "festive celebration backdrop, warm blurred bokeh lights, joyful, "
                "soft gradient, cheerful atmosphere"},
-    {"id": "frais_bleu", "label": "Frais / Bleu",
+    {"id": "frais_bleu", "label": "Fresh / Blue",
      "prompt": "cool fresh blue gradient backdrop, clean water droplets bokeh, crisp, "
                "refreshing minimal composition"},
-    {"id": "neutre", "label": "Neutre / Studio",
+    {"id": "neutre", "label": "Neutral / Studio",
      "prompt": "clean neutral studio gradient background, soft even lighting, "
                "minimal, professional product backdrop"},
 ]

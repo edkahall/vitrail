@@ -15,7 +15,97 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.organization import CmsOrganization
 from app.models.report import CmsReportBranding
+from app.models.user import CmsUser
 from app.services import analytics, media, report_pdf
+from app.services.doc_i18n import tr
+
+# E-mail d'envoi du rapport + nom du fichier joint/téléchargé. Le PDF lui-même porte ses
+# textes dans report_pdf.DOC_TEXTS. Langue = profil du destinataire du document (doc_i18n).
+DOC_TEXTS: dict[str, dict[str, str]] = {
+    "en": {
+        "email_subject": "{org} — Executive report ({from_d} → {until_d})",
+        "email_body": (
+            "Hello,\n\nPlease find attached the Vitrail executive report for {org} "
+            "for the period from {from_d} to {until_d}.\n\n"
+            "This report is generated automatically.\n\n— Vitrail"),
+        "email_body_test": (
+            "Vitrail executive report for {org} "
+            "({from_d} → {until_d}).\n\n— Vitrail"),
+        "pdf_filename": "executive_report_{from_d}_{until_d}.pdf",
+    },
+    "fr": {
+        "email_subject": "{org} — Rapport exécutif ({from_d} → {until_d})",
+        "email_body": (
+            "Bonjour,\n\nVeuillez trouver ci-joint le rapport exécutif Vitrail de "
+            "{org} pour la période du {from_d} au {until_d}.\n\n"
+            "Ce rapport est généré automatiquement.\n\n— Vitrail"),
+        "email_body_test": (
+            "Rapport exécutif Vitrail de {org} "
+            "({from_d} → {until_d}).\n\n— Vitrail"),
+        "pdf_filename": "rapport_executif_{from_d}_{until_d}.pdf",
+    },
+    "es": {
+        "email_subject": "{org} — Informe ejecutivo ({from_d} → {until_d})",
+        "email_body": (
+            "Hola,\n\nAdjunto encontrará el informe ejecutivo Vitrail de {org} "
+            "para el período del {from_d} al {until_d}.\n\n"
+            "Este informe se genera automáticamente.\n\n— Vitrail"),
+        "email_body_test": (
+            "Informe ejecutivo Vitrail de {org} "
+            "({from_d} → {until_d}).\n\n— Vitrail"),
+        "pdf_filename": "informe_ejecutivo_{from_d}_{until_d}.pdf",
+    },
+    "pt": {
+        "email_subject": "{org} — Relatório executivo ({from_d} → {until_d})",
+        "email_body": (
+            "Olá,\n\nSegue em anexo o relatório executivo Vitrail de {org} "
+            "para o período de {from_d} a {until_d}.\n\n"
+            "Este relatório é gerado automaticamente.\n\n— Vitrail"),
+        "email_body_test": (
+            "Relatório executivo Vitrail de {org} "
+            "({from_d} → {until_d}).\n\n— Vitrail"),
+        "pdf_filename": "relatorio_executivo_{from_d}_{until_d}.pdf",
+    },
+    "de": {
+        "email_subject": "{org} — Management-Bericht ({from_d} → {until_d})",
+        "email_body": (
+            "Guten Tag,\n\nanbei erhalten Sie den Vitrail-Management-Bericht von {org} "
+            "für den Zeitraum vom {from_d} bis {until_d}.\n\n"
+            "Dieser Bericht wird automatisch erstellt.\n\n— Vitrail"),
+        "email_body_test": (
+            "Vitrail-Management-Bericht von {org} "
+            "({from_d} → {until_d}).\n\n— Vitrail"),
+        "pdf_filename": "management_bericht_{from_d}_{until_d}.pdf",
+    },
+}
+
+
+def pdf_filename(from_d: date, until_d: date, locale: str | None) -> str:
+    """Nom du fichier PDF (ASCII, dates ISO) dans la langue du document."""
+    return tr(DOC_TEXTS, locale, "pdf_filename",
+              from_d=from_d.isoformat(), until_d=until_d.isoformat())
+
+
+def executive_email(org_name: str, from_d: date, until_d: date, locale: str | None,
+                    *, test: bool = False) -> tuple[str, str, str]:
+    """(sujet, corps, nom du fichier joint) de l'e-mail du rapport exécutif.
+    `test=True` = envoi immédiat (« Envoyer maintenant ») : corps court."""
+    fd = report_pdf.fmt_date(from_d, locale)
+    ud = report_pdf.fmt_date(until_d, locale)
+    subject = tr(DOC_TEXTS, locale, "email_subject", org=org_name, from_d=fd, until_d=ud)
+    body = tr(DOC_TEXTS, locale, "email_body_test" if test else "email_body",
+              org=org_name, from_d=fd, until_d=ud)
+    return subject, body, pdf_filename(from_d, until_d, locale)
+
+
+async def user_locale(db: AsyncSession, id_user: int | None) -> str | None:
+    """Langue de profil d'un utilisateur (créateur d'une planification) — None si inconnu
+    (supprimé, `created_by` NULL) → le document retombe sur l'anglais."""
+    if id_user is None:
+        return None
+    return (await db.execute(
+        select(CmsUser.locale).where(CmsUser.id_user == id_user)
+    )).scalar_one_or_none()
 
 
 def default_branding(id_org: int) -> CmsReportBranding:
@@ -48,7 +138,7 @@ def _fetch_logo_bytes(key: str) -> bytes:
 
 async def render_executive_pdf(
     db: AsyncSession, id_org: int, from_d: date, until_d: date, tz: ZoneInfo,
-    *, with_roi: bool = True, fetch_logo=None,
+    *, with_roi: bool = True, fetch_logo=None, locale: str | None = None,
 ) -> tuple[bytes, str]:
     """Construit le PDF exécutif → (bytes, nom_org). `fetch_logo` = callable(key)->bytes injecté
     (async endpoint : run_in_threadpool ; worker sync : appel direct). Défaut = lecture directe."""
@@ -72,12 +162,12 @@ async def render_executive_pdf(
         except Exception:
             logo_bytes = None
 
-    generated = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
+    generated = report_pdf.fmt_datetime(datetime.now(tz), locale)
     pdf = report_pdf.build_executive_pdf(
         org_name=org.org_name, payload=payload,
         branding={"primary_color": b.primary_color, "report_title": b.report_title,
                   "report_subtitle": b.report_subtitle},
-        roi=roi, logo_bytes=logo_bytes, generated_at=generated)
+        roi=roi, logo_bytes=logo_bytes, generated_at=generated, locale=locale)
     return pdf, org.org_name
 
 

@@ -128,7 +128,7 @@ async def create_user(
 ) -> UserRead:
     existing = await db.execute(select(CmsUser).where(CmsUser.email == body.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email déjà utilisé")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
     await validate_password_for_org(db, admin.id_org, body.password)
     user = CmsUser(
         id_org=admin.id_org,
@@ -143,7 +143,7 @@ async def create_user(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email déjà utilisé")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
     await db.refresh(user)
     db.add(_iam_audit(admin, "create", "user", str(user.id_user), {"email": user.email}))
     await db.commit()
@@ -167,7 +167,7 @@ async def _org_user_or_404(db: AsyncSession, id_org: int, id_user: int) -> CmsUs
     )).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Utilisateur introuvable")
+                            detail="User not found")
     return user
 
 
@@ -239,8 +239,8 @@ async def _assert_not_last_admin(db: AsyncSession, admin: CmsUser, id_user: int)
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "last_org_admin",
-                "message": "C'est le dernier administrateur actif de l'organisation : "
-                           "personne ne pourrait plus la rouvrir.",
+                "message": "This is the last active administrator of the organization: "
+                           "no one could reopen it.",
             },
         )
 
@@ -261,7 +261,7 @@ async def user_deletion_impact(
         select(CmsUser).where(CmsUser.id_user == id_user, CmsUser.id_org == admin.id_org)
     )).scalar_one_or_none()
     if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     impact = (await admin_refs.user_impact(db, id_user)).as_dict()
     admins = await rbac.org_admin_user_ids(db, admin.id_org)
@@ -299,7 +299,7 @@ async def delete_user(
     if id_user == admin.id_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Impossible de supprimer son propre compte",
+            detail="You cannot delete your own account",
         )
     target = await _org_user_or_404(db, admin.id_org, id_user)
     await _assert_not_last_admin(db, admin, id_user)
@@ -311,7 +311,7 @@ async def delete_user(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
                     "code": "user_has_references",
-                    "message": "Ce compte est encore référencé.",
+                    "message": "This account is still referenced.",
                     "blocking": [r.as_dict() for r in impact.blocking],
                     "deactivate_available": target.is_active,
                 },
@@ -352,7 +352,7 @@ async def list_user_roles(
         )
     ).scalar_one_or_none()
     if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     rows = await db.execute(
         select(CmsRole.id_role, CmsRole.role_key, CmsRole.label, CmsUserRoleAssignment.is_deny)
         .join(CmsUserRoleAssignment, CmsUserRoleAssignment.id_role == CmsRole.id_role)
@@ -386,7 +386,7 @@ async def _assignable_role_or_403(db: AsyncSession, id_role: int, admin: CmsUser
         or role.role_key in _PLATFORM_ROLE_KEYS
         or not (role.is_system or role.id_org == admin.id_org)
     ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Rôle non assignable")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Role not assignable")
     return role
 
 
@@ -405,7 +405,7 @@ async def _group_in_org_or_404(db: AsyncSession, id_group: int, admin: CmsUser) 
         )
     ).scalar_one_or_none()
     if group is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Groupe introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group
 
 
@@ -416,7 +416,7 @@ async def _target_user_in_org_or_404(db: AsyncSession, id_user: int, admin: CmsU
         )
     ).scalar_one_or_none()
     if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return target
 
 
@@ -481,7 +481,7 @@ async def reset_user_totp(
         )
     ).scalar_one_or_none()
     if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     org_name = (
         await db.execute(
             select(CmsOrganization.org_name).where(CmsOrganization.id_org == admin.id_org)
@@ -517,7 +517,7 @@ async def disable_user_totp(
         )
     ).scalar_one_or_none()
     if target is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     await db.execute(
         update(CmsUser)
         .where(CmsUser.id_user == id_user)
@@ -574,7 +574,7 @@ async def delete_group(
         )
     ).scalar_one_or_none()
     if group is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Groupe introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     await db.execute(
         update(CmsUserGroup).where(CmsUserGroup.id_group == id_group).values(is_active=False)
     )
@@ -737,10 +737,10 @@ async def set_role_permissions(
         await db.execute(select(CmsRole).where(CmsRole.id_role == id_role))
     ).scalar_one_or_none()
     if role is None or role.id_org != admin.id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rôle introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     if role.is_system:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Rôle système non modifiable"
+            status_code=status.HTTP_403_FORBIDDEN, detail="System role cannot be modified"
         )
 
     wanted = set(body.permissions)
@@ -752,13 +752,13 @@ async def set_role_permissions(
     if unknown:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Permissions inconnues : {', '.join(sorted(unknown))}",
+            detail=f"Unknown permissions: {', '.join(sorted(unknown))}",
         )
     unavailable = {p for p in wanted if catalog[p].module in _UNAVAILABLE_MODULES}
     if unavailable:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Fonctionnalité non disponible : {', '.join(sorted(unavailable))}",
+            detail=f"Feature not available: {', '.join(sorted(unavailable))}",
         )
     # Anti-escalade : un délégué ne peut accorder QUE des droits qu'il détient —
     # sinon un rôle custom rouvrirait un chemin d'escalade parallèle à celui fermé
@@ -775,7 +775,7 @@ async def set_role_permissions(
         if escalating:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Droits non détenus : {', '.join(sorted(escalating))}",
+                detail=f"Permissions you do not hold: {', '.join(sorted(escalating))}",
             )
 
     await db.execute(delete(CmsRolePermission).where(CmsRolePermission.id_role == id_role))
@@ -803,7 +803,7 @@ async def get_role_permissions(
         await db.execute(select(CmsRole).where(CmsRole.id_role == id_role))
     ).scalar_one_or_none()
     if role is None or (role.id_org is not None and role.id_org != admin.id_org):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rôle introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     rows = (
         await db.execute(
             select(CmsPermission.module, CmsPermission.operation)
@@ -866,7 +866,7 @@ async def delete_custom_role(
     # Hors org (y compris rôles système, id_org=NULL) → 404, jamais 403 (règle : ne pas
     # révéler l'existence cross-tenant). Le garde is_system reste en ceinture-bretelles.
     if role is None or role.id_org != admin.id_org or role.is_system:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rôle introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
     await db.execute(delete(CmsRolePermission).where(CmsRolePermission.id_role == id_role))
     await db.execute(delete(CmsUserRoleAssignment).where(CmsUserRoleAssignment.id_role == id_role))
     await db.execute(delete(CmsGroupRole).where(CmsGroupRole.id_role == id_role))
@@ -890,13 +890,13 @@ async def copy_role(
     )
     source = result.scalar_one_or_none()
     if source is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rôle source introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source role not found")
     # 3e porte de l'escalade : la copie recopie les PERMISSIONS. Cloner
     # CMS_SUPER_ADMIN produirait un custom role portant les 71 permissions du
     # catalogue — et un custom role, lui, s'assigne sans restriction.
     if source.role_key in _PLATFORM_ROLE_KEYS:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Rôle plateforme non copiable"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Platform role cannot be copied"
         )
 
     new_role = CmsRole(

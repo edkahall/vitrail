@@ -317,7 +317,7 @@ def fetch_feed(self, id_feed: int) -> dict:
             return {"id_feed": id_feed, "status": pstatus, "note": pnote, "inserted": 0}
     else:
         if not url:
-            _mark_feed_error(id_feed, "config.url manquant")
+            _mark_feed_error(id_feed, "config.url missing")
             return {"id_feed": id_feed, "error": "no url"}
 
         # Chaîne YouTube : l'utilisateur colle l'URL de la chaîne (/@handle, /channel/UC…) ou son
@@ -334,7 +334,7 @@ def fetch_feed(self, id_feed: int) -> dict:
         _safe_scheme = parsed_url.scheme in ("http", "https")
         if not _safe_scheme or not _host_is_safe(parsed_url.hostname or ""):
             logger.warning("fetch_feed %s : hôte non autorisé (%s)", id_feed, parsed_url.hostname)
-            _mark_feed_error(id_feed, "URL non autorisée (hôte interne/privé)")
+            _mark_feed_error(id_feed, "URL not allowed (internal/private host)")
             return {"id_feed": id_feed, "error": "unsafe host"}
 
         # Téléchargement contrôlé (timeout + plafond taille) puis parsing.

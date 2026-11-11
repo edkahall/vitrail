@@ -57,7 +57,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if count > self._per_minute:
             return JSONResponse(
                 status_code=429,
-                content={"detail": "Trop de requêtes. Réessayez dans un instant."},
+                content={"detail": "Too many requests. Please try again in a moment."},
                 headers={"Retry-After": "60"},
             )
         return await call_next(request)

@@ -27,11 +27,11 @@ def assert_app_url_is_isolated(app_url: str, database_url: str) -> None:
     """
     if app_url == database_url:
         raise RuntimeError(
-            "DATABASE_APP_URL manquant : la session applicative retomberait sur l'URL "
-            "SUPERUSER de DATABASE_URL et contournerait toute l'isolation RLS. "
-            "Définissez DATABASE_APP_URL (rôle signflow_app — créé par postgres-init.sh, "
-            "mot de passe POSTGRES_APP_PASSWORD du .env) dans l'environnement du backend "
-            "et des workers."
+            "DATABASE_APP_URL missing: the application session would fall back to the "
+            "SUPERUSER URL of DATABASE_URL and bypass all RLS isolation. "
+            "Set DATABASE_APP_URL (role signflow_app — created by postgres-init.sh, "
+            "password POSTGRES_APP_PASSWORD from .env) in the environment of the backend "
+            "and the workers."
         )
 
 
@@ -63,12 +63,12 @@ def assert_pool_budget_fits(workers: int, per_process: int, budget: int) -> None
     demanded = workers * per_process
     if demanded > budget:
         raise RuntimeError(
-            f"Budget de connexions dépassé : {workers} worker(s) × {per_process} "
-            f"connexions = {demanded}, pour un budget de {budget}. "
-            "Réduisez WEB_CONCURRENCY, ou baissez CMS_DB_POOL_SIZE / CMS_DB_MAX_OVERFLOW / "
-            "CMS_DB_WORKER_POOL_SIZE / CMS_DB_WORKER_MAX_OVERFLOW, ou relevez "
-            "CMS_DB_CONNECTION_BUDGET après avoir augmenté max_connections côté PostgreSQL "
-            "(en gardant de la réserve pour les workers Celery et la maintenance)."
+            f"Connection budget exceeded: {workers} worker(s) × {per_process} "
+            f"connections = {demanded}, for a budget of {budget}. "
+            "Reduce WEB_CONCURRENCY, or lower CMS_DB_POOL_SIZE / CMS_DB_MAX_OVERFLOW / "
+            "CMS_DB_WORKER_POOL_SIZE / CMS_DB_WORKER_MAX_OVERFLOW, or raise "
+            "CMS_DB_CONNECTION_BUDGET after increasing max_connections on PostgreSQL "
+            "(keeping headroom for the Celery workers and maintenance)."
         )
 
 

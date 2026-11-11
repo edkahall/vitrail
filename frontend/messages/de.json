@@ -549,7 +549,8 @@
     "enc_decision_admin_only": "Über dem Limit kann nur ein Organisationsadministrator die Kodierung starten.",
     "enc_decision_delete_hint": "Es startet nichts, bis Sie wählen. Sie können dieses Medium auch löschen.",
     "enc_decision_failed": "Die Entscheidung konnte nicht gespeichert werden.",
-    "enc_downloading": "Datei wird geholt"
+    "enc_downloading": "Datei wird geholt",
+    "system_folder_advertisers": "Werbetreibende"
   },
   "iam": {
     "title": "Benutzer & Rollen",

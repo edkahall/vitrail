@@ -142,7 +142,7 @@ async def _get_campaign(db: AsyncSession, user: CmsUser, id_campaign: int) -> Cm
     if camp is None or (
         user.id_advertiser is not None and camp.id_advertiser != user.id_advertiser
     ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campagne introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     return camp
 
 
@@ -153,7 +153,7 @@ async def require_retailer(
     occupation, réglages… — leur contenu fuiterait la pression commerciale des concurrents."""
     if current_user.id_advertiser is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Réservé au retailer")
+                            detail="Reserved for the retailer")
     return current_user
 
 
@@ -231,8 +231,13 @@ async def _fill_target_names(db: AsyncSession, id_org: int, targets: list) -> No
             t.target_name = names.get((t.target_type, t.target_id))
 
 
+# Racine des dossiers d'annonceurs : repérée par sa clé (migr 0131), jamais par son nom —
+# le nom affiché est traduit par l'interface.
+ADVERTISERS_FOLDER_KEY = "advertisers"
+
+
 async def _ensure_advertiser_folder(db: AsyncSession, adv: CmsAdvertiser) -> None:
-    """Dossier médiathèque « Annonceurs/<nom> » de l'annonceur (créé si absent, renommé
+    """Dossier médiathèque « Advertisers/<nom> » de l'annonceur (créé si absent, renommé
     si l'annonceur change de nom). Le picker de créatifs filtre sur son sous-arbre ;
     l'utilisateur peut créer librement des sous-dossiers dedans. Ne commit pas."""
     if adv.id_folder is not None:
@@ -248,12 +253,13 @@ async def _ensure_advertiser_folder(db: AsyncSession, adv: CmsAdvertiser) -> Non
         select(CmsMediaFolder).where(
             CmsMediaFolder.id_org == adv.id_org,
             CmsMediaFolder.parent_id.is_(None),
-            CmsMediaFolder.folder_name == "Annonceurs",
+            CmsMediaFolder.system_key == ADVERTISERS_FOLDER_KEY,
         ).limit(1)
     )).scalar_one_or_none()
     if root is None:
         root = CmsMediaFolder(id_org=adv.id_org, parent_id=None,
-                              folder_name="Annonceurs", depth=0, path="")
+                              folder_name="Advertisers", depth=0, path="",
+                              system_key=ADVERTISERS_FOLDER_KEY)
         db.add(root)
         await db.flush()
         root.path = str(root.id_folder)
@@ -325,7 +331,7 @@ async def validate_campaign_targets(db: AsyncSession, id_org: int, specs: list) 
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Cible introuvable dans l'organisation ({t_type}) : {missing}",
+                detail=f"Target not found in the organization ({t_type}): {missing}",
             )
 
 
@@ -405,7 +411,7 @@ async def create_industry_category(
     )).scalar_one_or_none()
     if dup is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Cette catégorie existe déjà")
+                            detail="This category already exists")
     cat = CmsIndustryCategory(id_org=current_user.id_org, category_name=name)
     db.add(cat)
     db.add(CmsAuditLog(
@@ -436,7 +442,7 @@ async def delete_industry_category(
     )).scalar_one_or_none()
     if cat is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Catégorie introuvable")
+                            detail="Category not found")
     db.add(CmsAuditLog(
         id_org=current_user.id_org, id_user=current_user.id_user, action="delete",
         resource_type="industry_category", resource_id=str(id_category),
@@ -459,7 +465,7 @@ async def _check_industry_categories(
     )).scalars().all())
     if set(ids) - valid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Catégorie introuvable")
+                            detail="Category not found")
 
 
 async def _replace_advertiser_categories(
@@ -598,7 +604,7 @@ async def update_advertiser(
         )
     )).scalar_one_or_none()
     if adv is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Annonceur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advertiser not found")
     category_changed = False
     if body.industry_categories is not None:
         await _check_industry_categories(db, current_user.id_org, body.industry_categories)
@@ -652,7 +658,7 @@ async def delete_advertiser(
         )
     )).scalar_one_or_none()
     if adv is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Annonceur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advertiser not found")
     active = (await db.execute(
         select(func.count()).select_from(CmsCampaign).where(
             CmsCampaign.id_advertiser == id_advertiser,
@@ -663,7 +669,7 @@ async def delete_advertiser(
     if active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"{active} campagne(s) non terminée(s) — annuler/terminer d'abord",
+            detail=f"{active} unfinished campaign(s) — cancel or end them first",
         )
     adv.is_deleted = True
     # Coupe aussi les accès portail de l'annonceur supprimé (comptes externes désactivés)
@@ -698,7 +704,7 @@ async def _get_advertiser_or_404(
         )
     )).scalar_one_or_none()
     if adv is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Annonceur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advertiser not found")
     return adv
 
 
@@ -711,7 +717,7 @@ async def _advertiser_role_id(db: AsyncSession) -> int:
 
     await db.execute(
         pg_insert(CmsRole)
-        .values(role_key="CMS_ADVERTISER", label="Annonceur (portail)", is_system=True)
+        .values(role_key="CMS_ADVERTISER", label="Advertiser (portal)", is_system=True)
         .on_conflict_do_nothing(constraint="uq_cms_roles_role_key")
     )
     role_id = (await db.execute(
@@ -779,17 +785,17 @@ async def invite_advertiser_user(
     if existing is not None:
         if existing.id_org != admin.id_org:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                                detail="Un compte existe déjà avec cet email")
+                                detail="An account already exists with this email")
         if existing.id_advertiser is not None and existing.id_advertiser != id_advertiser:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Ce compte est déjà lié à un autre annonceur (1 compte = 1 annonceur)")
+                detail="This account is already linked to another advertiser (1 account = 1 advertiser)")
         role_keys = await rbac.get_user_role_keys(db_worker, existing.id_user)
         if {"CMS_SUPER_ADMIN", "CMS_ORG_ADMIN"}.intersection(role_keys):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Ce compte est administrateur — retirez d'abord ses rôles "
-                       "dans Utilisateurs & rôles")
+                detail="This account is an administrator — remove its roles first "
+                       "in Users & roles")
         from app.models.role import CmsUserRoleAssignment
         was_inactive = not existing.is_active
         existing.id_advertiser = id_advertiser
@@ -882,7 +888,7 @@ async def revoke_advertiser_user(
         )
     )).scalar_one_or_none()
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Compte introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
     user.is_active = False
     if purge:
         user.id_advertiser = None
@@ -940,7 +946,7 @@ async def list_campaigns(
     id_advertiser: int | None = Query(default=None),
     target_type: str | None = Query(
         default=None, pattern="^(player|player_group|group|site|site_group)$",
-        description="Filtre cible : ne garder que les campagnes touchant cette cible",
+        description="Target filter: keep only the campaigns reaching this target",
     ),
     target_id: int | None = Query(default=None),
 ) -> list[CampaignRead]:
@@ -1004,7 +1010,7 @@ async def occupancy_check(
     if body.campaign_kind == "audio":
         if not body.spots_per_hour:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail="spots_per_hour est requis pour une campagne audio")
+                                detail="spots_per_hour is required for an audio campaign")
         res = await check_audio_occupancy(
             db, current_user.id_org,
             starts_on=body.starts_on, ends_on=body.ends_on,
@@ -1104,7 +1110,7 @@ async def campaign_occupancy_daily(
                             detail="date_to < date_from")
     if (date_to - date_from).days > 92:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Fenêtre max 92 jours")
+                            detail="Maximum window is 92 days")
     days = await occupancy_by_day(db, current_user.id_org, date_from, date_to)
     return {"days": [{"date": d, "max_pct": pct} for d, pct in days.items()]}
 
@@ -1138,13 +1144,13 @@ def _import_creative_check(spec) -> ImportResolvedCreative:
     else:
         return ImportResolvedCreative(
             url=spec.url, media_name=name, media_type=None,
-            error=f"Extension « {ext or '∅'} » non diffusable (vidéo/image seulement)")
+            error=f"Extension '{ext or '∅'}' cannot be played (video/image only)")
     if mt == "image" and not spec.duration_ms:
         return ImportResolvedCreative(url=spec.url, media_name=name, media_type=mt,
-                                      error="duration_ms requis pour une image")
+                                      error="duration_ms is required for an image")
     if not url_is_safe(spec.url, schemes=("http", "https")):
         return ImportResolvedCreative(url=spec.url, media_name=name, media_type=mt,
-                                      error="URL non autorisée (schéma/hôte)")
+                                      error="URL not allowed (scheme/host)")
     return ImportResolvedCreative(url=spec.url, media_name=name, media_type=mt)
 
 
@@ -1183,10 +1189,10 @@ async def _import_resolve(
                 )
             )).scalars().all()
             if not rows:
-                rt.error = f"{t.type} « {t.name} » introuvable"
+                rt.error = f"{t.type} '{t.name}' not found"
                 errors.append(rt.error)
             elif len(rows) > 1:
-                rt.error = f"{t.type} « {t.name} » ambigu ({len(rows)} correspondances)"
+                rt.error = f"{t.type} '{t.name}' is ambiguous ({len(rows)} matches)"
                 errors.append(rt.error)
             else:
                 rt.target_id = rows[0]
@@ -1195,7 +1201,7 @@ async def _import_resolve(
     creatives = [
         await run_in_threadpool(_import_creative_check, spec) for spec in order.creatives
     ]
-    errors.extend(f"créatif {c.media_name} : {c.error}" for c in creatives if c.error)
+    errors.extend(f"creative {c.media_name}: {c.error}" for c in creatives if c.error)
     return adv, targets, creatives, errors
 
 
@@ -1227,7 +1233,7 @@ async def campaign_import_dry_run(
             adv.id_advertiser if adv is not None else None)
         target_player_count = len(pids)
         if not pids:
-            errors.append("Aucun player ciblé (cibles vides ou tous opt-out)")
+            errors.append("No player targeted (no targets, or all opted out)")
         occ = await check_campaign_occupancy(
             db, actor.id_org,
             starts_on=order.campaign.starts_on, ends_on=order.campaign.ends_on,
@@ -1426,7 +1432,7 @@ async def revoke_import_key(
         )
     )).scalar_one_or_none()
     if key is None or CAMPAIGN_IMPORT_SCOPE not in (key.scopes or []):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clé introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Key not found.")
     key.is_active = False
     db.add(CmsAuditLog(
         id_org=current_user.id_org, id_user=current_user.id_user, action="delete",
@@ -1474,8 +1480,8 @@ async def _check_creative_duration(
     if eff is not None and eff > limit_s * 1000:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Créatif trop long : {round(eff / 1000)} s > limite de "
-                   f"{limit_s} s de l'organisation (réglable dans Campagnes)",
+            detail=f"Creative too long: {round(eff / 1000)} s > the organization's "
+                   f"{limit_s} s limit (configurable in Campaigns)",
         )
 
 
@@ -1602,7 +1608,7 @@ async def create_campaign(
         )
     )).scalar_one_or_none()
     if adv is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Annonceur introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advertiser not found")
     await validate_campaign_targets(db, current_user.id_org, body.targets)
     camp = CmsCampaign(
         id_org=current_user.id_org,
@@ -1664,7 +1670,7 @@ async def update_campaign(
     camp = await _get_campaign(db, current_user, id_campaign)
     if camp.status in ("cancelled", "completed"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Campagne terminée — non modifiable")
+                            detail="Campaign ended — cannot be modified")
     # Édition d'une campagne EN DIFFUSION : si les cibles changent, les players retirés
     # doivent aussi re-syncer (perdre les créatifs) → on capture les anciens avant.
     was_approved = camp.status == "approved"
@@ -1687,7 +1693,7 @@ async def update_campaign(
         )).scalar_one_or_none()
         if adv is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Annonceur introuvable")
+                                detail="Advertiser not found")
     for field in body.model_fields_set:
         if field == "targets":
             continue
@@ -1764,7 +1770,7 @@ async def change_campaign_status(
     if camp.status not in allowed_from:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Action {body.action} impossible depuis le statut {camp.status}",
+            detail=f"Action {body.action} not allowed from status {camp.status}",
         )
     # Approval Workflow §XXI (C1) : une demande en cours de revue bloque la publication ;
     # une demande approuvée est marquée `published` avec la transition (même transaction).
@@ -1774,8 +1780,8 @@ async def change_campaign_status(
             and approval_req.status in ("pending_review", "changes_requested")):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Campagne en attente d'approbation — publication bloquée "
-                   "tant que la demande n'est pas approuvée",
+            detail="Campaign awaiting approval — publishing is blocked "
+                   "until the request is approved",
         )
     if body.action == "publish":
         creative_statuses = (await db.execute(
@@ -1791,7 +1797,7 @@ async def change_campaign_status(
         if not creative_statuses or not trows:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Publication impossible : il faut au moins un créatif actif et une cible",
+                detail="Cannot publish: at least one active creative and one target are required",
             )
         # S5 : org avec approbation des créatifs → au moins un créatif approuvé, sinon
         # la campagne serait « live » sans rien à diffuser.
@@ -1799,8 +1805,8 @@ async def change_campaign_status(
                 and await _org_creative_approval(db, current_user.id_org)):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Publication impossible : aucun créatif approuvé "
-                       "(approbation requise par votre organisation)",
+                detail="Cannot publish: no approved creative "
+                       "(approval required by your organization)",
             )
         # Garde-fou boucle courte : re-vérifié ici car la durée d'une vidéo uploadée
         # au portail / importée par URL n'est connue qu'après transcodage.
@@ -1809,8 +1815,8 @@ async def change_campaign_status(
         if violations:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Créatif(s) au-dessus de la limite de durée de "
-                       "l'organisation : " + " · ".join(violations),
+                detail="Creative(s) over the organization's "
+                       "duration limit: " + " · ".join(violations),
             )
         # Surbooking (S2, décision Ed) : > 100 % d'occupation sur AU MOINS un player ciblé
         # = publication refusée, sauf override org-admin explicite (overbook_override).
@@ -1822,7 +1828,7 @@ async def change_campaign_status(
             if not camp.spots_per_hour:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="Publication impossible : spots/heure non renseignés",
+                    detail="Cannot publish: spots per hour not set",
                 )
             occ = await check_audio_occupancy(
                 db, current_user.id_org,
@@ -1837,10 +1843,10 @@ async def change_campaign_status(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        "Surbooking audio : le plafond de spots/heure serait dépassé "
+                        "Audio overbooking: the spots-per-hour cap would be exceeded "
                         f"({worst.get('projected_spots', '?')}/{worst.get('cap_spots', '?')} "
-                        f"spots/h sur le player #{worst.get('id_player', '?')}). "
-                        "Réduire la cadence / la période, ou forcer (org-admin, "
+                        f"spots/h on player #{worst.get('id_player', '?')}). "
+                        "Reduce the rate / the period, or force it (org admin, "
                         "overbook_override)."
                     ),
                 )
@@ -1858,9 +1864,9 @@ async def change_campaign_status(
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        "Surbooking : l'inventaire dépasserait "
+                        "Overbooking: inventory would exceed "
                         f"{occ['max_projected_pct']}% (player #{worst.get('id_player', '?')}). "
-                        "Réduire la part de voix / la période, ou forcer (org-admin, "
+                        "Reduce the share of voice / the period, or force it (org admin, "
                         "overbook_override)."
                     ),
                 )
@@ -1947,7 +1953,7 @@ async def add_creative(
     camp = await _get_campaign(db, current_user, id_campaign)
     if camp.status in ("cancelled", "completed"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Campagne terminée — non modifiable")
+                            detail="Campaign ended — cannot be modified")
     media = (await db.execute(
         select(CmsMedia).where(
             CmsMedia.id_media == body.id_media,
@@ -1956,18 +1962,18 @@ async def add_creative(
         )
     )).scalar_one_or_none()
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     allowed = _CREATIVE_MEDIA_TYPES_BY_KIND.get(camp.campaign_kind, _CREATIVE_MEDIA_TYPES)
     if media.media_type not in allowed:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(f"Type {media.media_type} non diffusable en créatif d'une campagne "
-                    f"{camp.campaign_kind} ({'/'.join(allowed)} seulement)"),
+            detail=(f"Type {media.media_type} cannot be used as a creative in a "
+                    f"{camp.campaign_kind} campaign ({'/'.join(allowed)} only)"),
         )
     if media.media_type == "image" and not body.duration_ms and not media.duration_ms:
         # une image sans durée native exige une durée d'affichage explicite
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="duration_ms requis pour une image")
+                            detail="duration_ms is required for an image")
     # Garde-fou boucle courte (migr 0089) : limite de durée org (défaut 30 s)
     await _check_creative_duration(db, current_user.id_org, media, body.duration_ms)
     cr = CmsCampaignCreative(
@@ -2005,7 +2011,7 @@ async def update_creative(
         )
     )).scalar_one_or_none()
     if cr is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Créatif introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creative not found")
     # La limite de durée de l'organisation était vérifiée à l'AJOUT et au publish, pas
     # ICI : on ajoutait une image à 10 s puis on la passait à 300 s. Le publish rattrapait,
     # mais entre-temps une campagne DÉJÀ publiée diffusait une durée interdite, et le
@@ -2046,7 +2052,7 @@ async def delete_creative(
         )
     )).scalar_one_or_none()
     if cr is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Créatif introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creative not found")
     id_campaign = cr.id_campaign
     media = (await db.execute(
         select(CmsMedia).where(CmsMedia.id_media == cr.id_media)
@@ -2073,7 +2079,7 @@ async def _review_creative(
         )
     )).scalar_one_or_none()
     if cr is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Créatif introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creative not found")
     cr.approval_status = new_status
     cr.reviewed_by = current_user.id_user
     cr.reviewed_at = datetime.now(UTC)
@@ -2178,11 +2184,14 @@ async def campaign_report_pdf_endpoint(
         org_name=org.org_name, payload=payload,
         branding={"primary_color": b.primary_color},
         logo_bytes=logo_bytes,
-        generated_at=datetime.now(tz).strftime("%d/%m/%Y %H:%M"),
+        generated_at=campaign_report_pdf.fmt_generated_at(
+            datetime.now(tz), current_user.locale),
         level=level,
+        locale=current_user.locale,
     )
-    filename = (f"rapport_campagne_{id_campaign}_"
-                f"{payload['period']['from']}_{payload['period']['until']}.pdf")
+    filename = campaign_report_pdf.report_filename(
+        id_campaign, payload["period"]["from"], payload["period"]["until"],
+        current_user.locale)
     return Response(
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},

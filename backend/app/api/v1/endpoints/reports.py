@@ -26,6 +26,7 @@ from app.models.pop import CmsProofOfPlay
 from app.models.user import CmsUser
 from app.schemas.report import RightsReportResponse, RightsReportRow
 from app.services import csv_safety
+from app.services.doc_i18n import tr
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -35,6 +36,42 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 # (ou tab/CR) → exécuté comme formule à l'ouverture dans Excel/Calc (HYPERLINK, DDE…).
 # Définition UNIQUE dans `services/csv_safety` — elle vivait ici en troisième exemplaire.
 _csv_safe = csv_safety.csv_safe
+
+# Textes du CSV « droits d'auteur » dans la langue du profil du demandeur (défaut anglais).
+# En-têtes séparés par des virgules, sans espace ; le français est conservé tel quel
+# (historique), les autres langues sont en ASCII.
+DOC_TEXTS: dict[str, dict[str, str]] = {
+    "en": {
+        "csv_header": "ISRC,Title,Composer,Publisher,Rights_society,Plays,Total_duration_sec,"
+                      "Players,Sites,Royalty_free",
+        "yes": "yes",
+        "no": "no",
+    },
+    "fr": {
+        "csv_header": "ISRC,Titre,Compositeur,Editeur,Société,Nb_diffusions,Durée_totale_sec,"
+                      "Players,Sites,Libre_de_droits",
+        "yes": "oui",
+        "no": "non",
+    },
+    "es": {
+        "csv_header": "ISRC,Titulo,Compositor,Editor,Sociedad_gestion,Emisiones,"
+                      "Duracion_total_seg,Players,Sitios,Libre_de_derechos",
+        "yes": "si",
+        "no": "no",
+    },
+    "pt": {
+        "csv_header": "ISRC,Titulo,Compositor,Editora,Sociedade_gestao,Difusoes,"
+                      "Duracao_total_seg,Players,Locais,Livre_de_direitos",
+        "yes": "sim",
+        "no": "nao",
+    },
+    "de": {
+        "csv_header": "ISRC,Titel,Komponist,Verlag,Verwertungsgesellschaft,Wiedergaben,"
+                      "Gesamtdauer_Sek,Player,Standorte,Lizenzfrei",
+        "yes": "ja",
+        "no": "nein",
+    },
+}
 
 
 def _tz() -> ZoneInfo:
@@ -119,16 +156,15 @@ async def rights_report(
     if format == "csv":
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(
-            ["ISRC", "Titre", "Compositeur", "Editeur", "Société",
-             "Nb_diffusions", "Durée_totale_sec", "Players", "Sites", "Libre_de_droits"]
-        )
+        loc = current_user.locale
+        writer.writerow(tr(DOC_TEXTS, loc, "csv_header").split(","))
+        yes, no = tr(DOC_TEXTS, loc, "yes"), tr(DOC_TEXTS, loc, "no")
         for row in rows:
             writer.writerow([
                 _csv_safe(row.isrc), _csv_safe(row.title), _csv_safe(row.composer),
                 _csv_safe(row.publisher), _csv_safe(row.rights_org),
                 row.plays, row.total_sec, row.players, row.sites,
-                "oui" if row.rights_cleared else "non",
+                yes if row.rights_cleared else no,
             ])
         filename = f"rights_{from_.isoformat()}_{until.isoformat()}.csv"
         return Response(

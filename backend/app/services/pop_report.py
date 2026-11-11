@@ -13,6 +13,206 @@ from __future__ import annotations
 
 from io import BytesIO
 
+from app.services.doc_i18n import tr
+
+# Textes du rapport PoP (PDF) ET des sorties voisines qui en dépendent (CSV /pop/plays.csv,
+# libellés de périmètre de pop.py, archive journalière du worker). Langue = celle du profil
+# du demandeur ; archive journalière (aucun utilisateur) → anglais.
+# CSV : en-têtes ASCII sans espace (lus aussi par des tableurs/outils), séparés par des virgules.
+DOC_TEXTS: dict[str, dict[str, str]] = {
+    "en": {
+        "title": "Proof of Play report",
+        "org_period": "Organization: <b>{org}</b> &nbsp;·&nbsp; Period: "
+                      "<b>{from_date}</b> → <b>{until_date}</b>",
+        "scope": "Scope: {scope}",
+        "generated": "Generated on {at}",
+        "total_plays": "Total plays",
+        "of_screen_off": "Of which screen off (not counted)",
+        "of_covered": "Of which zone covered (not counted)",
+        "players_covered": "Players covered",
+        "merkle_global": "Global Merkle root",
+        "chain_valid": "Chain valid",
+        "chain_broken": "CHAIN TAMPERED",
+        "plays": "Plays",
+        "total_duration": "Total duration",
+        "signed": "Signed ✓",
+        "unsigned": "Unsigned",
+        "sig_invalid": "Invalid signatures",
+        "integrity": "Integrity",
+        "covered_zone": "Zone covered",
+        "screen_off": "Screen off",
+        "not_counted": "not counted",
+        "merkle_root": "Merkle root: <font face='Courier'>{value}</font>",
+        "chain_head": "Chain head: <font face='Courier'>{value}</font>",
+        "footer": "Each play is chained by SHA-256 hash (tamper-evidence) and, when the player "
+                  "supports it, signed with an Ed25519 key unique to the device. An invalid "
+                  "signature or a broken chain is reported above.",
+        "scope_group": "Group #{id}",
+        "scope_site": "Site #{id}",
+        "scope_selected": "{n} selected player(s)",
+        "scope_all": "All players of the organization",
+        "scope_daily_archive": "Proof of Play archive (daily)",
+        "csv_header": "Player,Media,Played_at_UTC,Duration_sec,Signed,Screen_off,"
+                      "Zone_covered,Chain_hash",
+        "yes": "yes",
+        "no": "no",
+    },
+    "fr": {
+        "title": "Rapport Proof of Play",
+        "org_period": "Organisation : <b>{org}</b> &nbsp;·&nbsp; Période : "
+                      "<b>{from_date}</b> → <b>{until_date}</b>",
+        "scope": "Périmètre : {scope}",
+        "generated": "Généré le {at}",
+        "total_plays": "Total diffusions",
+        "of_screen_off": "Dont écran coupé (non comptées)",
+        "of_covered": "Dont zone recouverte (non comptées)",
+        "players_covered": "Players couverts",
+        "merkle_global": "Merkle root global",
+        "chain_valid": "Chaîne valide",
+        "chain_broken": "CHAÎNE ALTÉRÉE",
+        "plays": "Diffusions",
+        "total_duration": "Durée totale",
+        "signed": "Signées ✓",
+        "unsigned": "Non signées",
+        "sig_invalid": "Signatures invalides",
+        "integrity": "Intégrité",
+        "covered_zone": "Zone recouverte",
+        "screen_off": "Écran coupé",
+        "not_counted": "non comptabilisées",
+        "merkle_root": "Merkle root : <font face='Courier'>{value}</font>",
+        "chain_head": "Tête de chaîne : <font face='Courier'>{value}</font>",
+        "footer": "Chaque diffusion est chaînée par hash SHA-256 (anti-altération) et, lorsque le "
+                  "player le supporte, signée par une clé Ed25519 propre au device. Une signature "
+                  "invalide ou une rupture de chaîne est signalée ci-dessus.",
+        "scope_group": "Groupe #{id}",
+        "scope_site": "Site #{id}",
+        "scope_selected": "{n} player(s) sélectionné(s)",
+        "scope_all": "Tous les players de l'organisation",
+        "scope_daily_archive": "Archive Proof of Play (journalière)",
+        "csv_header": "Player,Media,Diffuse_le_UTC,Duree_sec,Signe,Ecran_coupe,"
+                      "Zone_recouverte,Hash_chaine",
+        "yes": "oui",
+        "no": "non",
+    },
+    "es": {
+        "title": "Informe Proof of Play",
+        "org_period": "Organización: <b>{org}</b> &nbsp;·&nbsp; Periodo: "
+                      "<b>{from_date}</b> → <b>{until_date}</b>",
+        "scope": "Alcance: {scope}",
+        "generated": "Generado el {at}",
+        "total_plays": "Total de emisiones",
+        "of_screen_off": "De ellas, pantalla apagada (no contadas)",
+        "of_covered": "De ellas, zona cubierta (no contadas)",
+        "players_covered": "Players incluidos",
+        "merkle_global": "Merkle root global",
+        "chain_valid": "Cadena válida",
+        "chain_broken": "CADENA ALTERADA",
+        "plays": "Emisiones",
+        "total_duration": "Duración total",
+        "signed": "Firmadas ✓",
+        "unsigned": "No firmadas",
+        "sig_invalid": "Firmas no válidas",
+        "integrity": "Integridad",
+        "covered_zone": "Zona cubierta",
+        "screen_off": "Pantalla apagada",
+        "not_counted": "no contabilizadas",
+        "merkle_root": "Merkle root: <font face='Courier'>{value}</font>",
+        "chain_head": "Cabeza de cadena: <font face='Courier'>{value}</font>",
+        "footer": "Cada emisión se encadena mediante hash SHA-256 (antimanipulación) y, cuando el "
+                  "player lo admite, se firma con una clave Ed25519 propia del dispositivo. Una "
+                  "firma no válida o una ruptura de cadena se indica más arriba.",
+        "scope_group": "Grupo #{id}",
+        "scope_site": "Sitio #{id}",
+        "scope_selected": "{n} player(s) seleccionado(s)",
+        "scope_all": "Todos los players de la organización",
+        "scope_daily_archive": "Archivo Proof of Play (diario)",
+        "csv_header": "Player,Medio,Emitido_UTC,Duracion_seg,Firmado,Pantalla_apagada,"
+                      "Zona_cubierta,Hash_cadena",
+        "yes": "si",
+        "no": "no",
+    },
+    "pt": {
+        "title": "Relatório Proof of Play",
+        "org_period": "Organização: <b>{org}</b> &nbsp;·&nbsp; Período: "
+                      "<b>{from_date}</b> → <b>{until_date}</b>",
+        "scope": "Âmbito: {scope}",
+        "generated": "Gerado em {at}",
+        "total_plays": "Total de difusões",
+        "of_screen_off": "Das quais com ecrã desligado (não contadas)",
+        "of_covered": "Das quais com zona coberta (não contadas)",
+        "players_covered": "Players abrangidos",
+        "merkle_global": "Merkle root global",
+        "chain_valid": "Cadeia válida",
+        "chain_broken": "CADEIA ALTERADA",
+        "plays": "Difusões",
+        "total_duration": "Duração total",
+        "signed": "Assinadas ✓",
+        "unsigned": "Não assinadas",
+        "sig_invalid": "Assinaturas inválidas",
+        "integrity": "Integridade",
+        "covered_zone": "Zona coberta",
+        "screen_off": "Ecrã desligado",
+        "not_counted": "não contabilizadas",
+        "merkle_root": "Merkle root: <font face='Courier'>{value}</font>",
+        "chain_head": "Cabeça da cadeia: <font face='Courier'>{value}</font>",
+        "footer": "Cada difusão é encadeada por hash SHA-256 (anti-adulteração) e, quando o "
+                  "player o suporta, assinada com uma chave Ed25519 própria do dispositivo. Uma "
+                  "assinatura inválida ou uma quebra de cadeia é indicada acima.",
+        "scope_group": "Grupo #{id}",
+        "scope_site": "Local #{id}",
+        "scope_selected": "{n} player(s) selecionado(s)",
+        "scope_all": "Todos os players da organização",
+        "scope_daily_archive": "Arquivo Proof of Play (diário)",
+        "csv_header": "Player,Media,Difundido_UTC,Duracao_seg,Assinado,Ecra_desligado,"
+                      "Zona_coberta,Hash_cadeia",
+        "yes": "sim",
+        "no": "nao",
+    },
+    "de": {
+        "title": "Proof-of-Play-Bericht",
+        "org_period": "Organisation: <b>{org}</b> &nbsp;·&nbsp; Zeitraum: "
+                      "<b>{from_date}</b> → <b>{until_date}</b>",
+        "scope": "Umfang: {scope}",
+        "generated": "Erstellt am {at}",
+        "total_plays": "Wiedergaben gesamt",
+        "of_screen_off": "Davon Bildschirm aus (nicht gezählt)",
+        "of_covered": "Davon Zone verdeckt (nicht gezählt)",
+        "players_covered": "Erfasste Player",
+        "merkle_global": "Globaler Merkle-Root",
+        "chain_valid": "Kette gültig",
+        "chain_broken": "KETTE MANIPULIERT",
+        "plays": "Wiedergaben",
+        "total_duration": "Gesamtdauer",
+        "signed": "Signiert ✓",
+        "unsigned": "Nicht signiert",
+        "sig_invalid": "Ungültige Signaturen",
+        "integrity": "Integrität",
+        "covered_zone": "Zone verdeckt",
+        "screen_off": "Bildschirm aus",
+        "not_counted": "nicht gezählt",
+        "merkle_root": "Merkle-Root: <font face='Courier'>{value}</font>",
+        "chain_head": "Kettenkopf: <font face='Courier'>{value}</font>",
+        "footer": "Jede Wiedergabe ist per SHA-256-Hash verkettet (Manipulationsschutz) und, "
+                  "sofern der Player es unterstützt, mit einem gerätespezifischen Ed25519-"
+                  "Schlüssel signiert. Eine ungültige Signatur oder ein Kettenbruch wird oben "
+                  "gemeldet.",
+        "scope_group": "Gruppe #{id}",
+        "scope_site": "Standort #{id}",
+        "scope_selected": "{n} ausgewählte(r) Player",
+        "scope_all": "Alle Player der Organisation",
+        "scope_daily_archive": "Proof-of-Play-Archiv (täglich)",
+        "csv_header": "Player,Medium,Gespielt_UTC,Dauer_Sek,Signiert,Bildschirm_aus,"
+                      "Zone_verdeckt,Ketten_Hash",
+        "yes": "ja",
+        "no": "nein",
+    },
+}
+
+
+def csv_header(locale: str | None) -> list[str]:
+    """En-tête du CSV /pop/plays.csv dans la langue demandée (ASCII, sans espace)."""
+    return tr(DOC_TEXTS, locale, "csv_header").split(",")
+
 
 def _fmt_duration(total_sec: int) -> str:
     h, rem = divmod(int(total_sec), 3600)
@@ -24,7 +224,7 @@ def _fmt_duration(total_sec: int) -> str:
     return f"{s}s"
 
 
-def build_pop_report_pdf(report: dict) -> bytes:
+def build_pop_report_pdf(report: dict, *, locale: str | None = None) -> bytes:
     """Construit le PDF à partir d'un dict structuré (voir endpoint pop.report_pdf).
 
     report = {
@@ -54,6 +254,9 @@ def build_pop_report_pdf(report: dict) -> bytes:
         TableStyle,
     )
 
+    def T(key: str, **kw) -> str:
+        return tr(DOC_TEXTS, locale, key, **kw)
+
     accent = colors.HexColor("#4875B4")
     ink = colors.HexColor("#1D2B3A")
     ok = colors.HexColor("#2F855A")
@@ -63,7 +266,7 @@ def build_pop_report_pdf(report: dict) -> bytes:
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         leftMargin=18 * mm, rightMargin=18 * mm, topMargin=18 * mm, bottomMargin=18 * mm,
-        title="Rapport Proof of Play",
+        title=T("title"),
     )
     styles = getSampleStyleSheet()
     h1 = ParagraphStyle("h1", parent=styles["Heading1"], textColor=ink, fontSize=18, spaceAfter=4)
@@ -73,24 +276,24 @@ def build_pop_report_pdf(report: dict) -> bytes:
                            textColor=colors.HexColor("#5A6473"))
 
     story: list = []
-    story.append(Paragraph("Rapport Proof of Play", h1))
+    story.append(Paragraph(T("title"), h1))
     story.append(Paragraph(
-        f"Organisation : <b>{report['org_name']}</b> &nbsp;·&nbsp; Période : "
-        f"<b>{report['from_date']}</b> → <b>{report['until_date']}</b>", styles["Normal"]))
+        T("org_period", org=report["org_name"], from_date=report["from_date"],
+          until_date=report["until_date"]), styles["Normal"]))
     if report.get("scope_label"):
-        story.append(Paragraph(f"Périmètre : {report['scope_label']}", styles["Normal"]))
-    story.append(Paragraph(f"Généré le {report['generated_at']}", small))
+        story.append(Paragraph(T("scope", scope=report["scope_label"]), styles["Normal"]))
+    story.append(Paragraph(T("generated", at=report["generated_at"]), small))
     story.append(Spacer(1, 8))
 
     # Résumé global. Les lignes « non comptées » ne s'affichent que s'il y a matière :
     # ne pas polluer un rapport nominal avec des zéros.
-    summary = [["Total diffusions", str(report["total_plays"])]]
+    summary = [[T("total_plays"), str(report["total_plays"])]]
     if report.get("total_screen_off"):
-        summary.append(["Dont écran coupé (non comptées)", str(report["total_screen_off"])])
+        summary.append([T("of_screen_off"), str(report["total_screen_off"])])
     if report.get("total_covered"):
-        summary.append(["Dont zone recouverte (non comptées)", str(report["total_covered"])])
-    summary.append(["Players couverts", str(len(report["players"]))])
-    summary.append(["Merkle root global", report.get("merkle_root") or "—"])
+        summary.append([T("of_covered"), str(report["total_covered"])])
+    summary.append([T("players_covered"), str(len(report["players"]))])
+    summary.append([T("merkle_global"), report.get("merkle_root") or "—"])
     # Le Merkle root est la DERNIÈRE ligne : on cible son index calculé, jamais un index
     # écrit en dur — les lignes conditionnelles ci-dessus le décalent (la police Courier
     # atterrissait sur « Players couverts » dès qu'une preuve était marquée).
@@ -112,17 +315,17 @@ def build_pop_report_pdf(report: dict) -> bytes:
     # Sections par player
     for p in report["players"]:
         story.append(Paragraph(p["player_name"], h2))
-        integ = ("Chaîne valide" if p["chain_valid"] else "CHAÎNE ALTÉRÉE")
+        integ = T("chain_valid") if p["chain_valid"] else T("chain_broken")
         integ_color = ok if p["chain_valid"] else bad
         rows = [
-            ["Diffusions", str(p["plays"]), "Durée totale", _fmt_duration(p["duration_sec"])],
-            ["Signées ✓", str(p["signed"]), "Non signées", str(p["unsigned"])],
-            ["Signatures invalides", str(p["signature_invalid"]), "Intégrité", integ],
+            [T("plays"), str(p["plays"]), T("total_duration"), _fmt_duration(p["duration_sec"])],
+            [T("signed"), str(p["signed"]), T("unsigned"), str(p["unsigned"])],
+            [T("sig_invalid"), str(p["signature_invalid"]), T("integrity"), integ],
         ]
         if p.get("covered"):
-            rows.insert(1, ["Zone recouverte", str(p["covered"]), "", "non comptabilisées"])
+            rows.insert(1, [T("covered_zone"), str(p["covered"]), "", T("not_counted")])
         if p.get("screen_off"):
-            rows.insert(1, ["Écran coupé", str(p["screen_off"]), "", "non comptabilisées"])
+            rows.insert(1, [T("screen_off"), str(p["screen_off"]), "", T("not_counted")])
         pt = Table(rows, colWidths=[38 * mm, 25 * mm, 38 * mm, 69 * mm])
         pt.setStyle(TableStyle([
             ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
@@ -140,14 +343,11 @@ def build_pop_report_pdf(report: dict) -> bytes:
         story.append(Spacer(1, 2))
         _mr = p.get("merkle_root") or "—"
         _ch = p.get("chain_head") or "—"
-        story.append(Paragraph(f"Merkle root : <font face='Courier'>{_mr}</font>", small))
-        story.append(Paragraph(f"Tête de chaîne : <font face='Courier'>{_ch}</font>", small))
+        story.append(Paragraph(T("merkle_root", value=_mr), small))
+        story.append(Paragraph(T("chain_head", value=_ch), small))
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph(
-        "Chaque diffusion est chaînée par hash SHA-256 (anti-altération) et, lorsque le player le "
-        "supporte, signée par une clé Ed25519 propre au device. Une signature invalide ou une "
-        "rupture de chaîne est signalée ci-dessus.", small))
+    story.append(Paragraph(T("footer"), small))
 
     doc.build(story)
     return buf.getvalue()

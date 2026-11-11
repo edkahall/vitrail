@@ -263,6 +263,9 @@ class FolderRead(BaseModel):
     folder_name: str
     depth: int
     path: str
+    # Dossier système (`advertisers`) : nom affiché traduit par l'interface, ni renommable
+    # ni déplaçable.
+    system_key: Optional[str] = None
     child_count: int = 0   # sous-dossiers directs — enrichi par l'endpoint
     media_count: int = 0   # médias directement dans ce dossier — enrichi par l'endpoint
     # Chemin LISIBLE, ancêtres compris (« Video / Divers »). Sans lui, deux dossiers

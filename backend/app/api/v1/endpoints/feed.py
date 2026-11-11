@@ -113,7 +113,7 @@ async def _get_feed_or_404(db: AsyncSession, id_feed: int, id_org: int) -> CmsDa
         )
     )).scalar_one_or_none()
     if feed is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feed not found")
     return feed
 
 
@@ -247,8 +247,8 @@ async def update_feed(
         if "display_mode" in fields and fields["display_mode"] is not None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Le type Google News ne fournit pas d'images : choisissez un mode sans "
-                       "image (bandeau défilant ou liste compacte).",
+                detail="The Google News type provides no images: choose a mode without "
+                       "images (scrolling ticker or compact list).",
             )
         feed.display_mode = "ticker"
 
@@ -258,7 +258,7 @@ async def update_feed(
         if "display_mode" in fields and fields["display_mode"] is not None:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Le mode vidéo (video_feed) n'est disponible que pour une chaîne YouTube.",
+                detail="Video mode (video_feed) is only available for a YouTube channel.",
             )
         feed.display_mode = "card_carousel"
 

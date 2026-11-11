@@ -68,20 +68,20 @@ async def download_bundle(
     <os>/<ver>`) que le player résout contre son propre `backend_url` → une release serveur est
     portable d'un client à l'autre (aucun hostname ni token GitHub dans le catalogue)."""
     if platform not in _BUNDLE_PLATFORMS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plateforme inconnue.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown platform.")
     if _OS_TO_BUNDLE.get((_player.player_os or "").lower()) != platform:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bundle d'une autre plateforme que celle du player.",
+            detail="Bundle is for a different platform than the player's.",
         )
     if not ota._SEMVER.match((version or "").strip()):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Version invalide.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version.")
     ext, mime = _BUNDLE_ARTIFACT[platform]
     key = f"player-bundles/{platform}/{version}{ext}"
     try:
         data = await media.download_file(key)
     except Exception:  # noqa: BLE001 — clé absente / stockage indispo → bundle introuvable
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bundle introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bundle not found.")
     return Response(
         content=data, media_type=mime,
         headers={"Content-Disposition": f'attachment; filename="{platform}-{version}{ext}"'},
@@ -106,17 +106,17 @@ async def download_renderer_file(
     SemVer, chemin validé par la MÊME règle que l'import (un chemin qui n'a pas pu être écrit
     ne peut pas être demandé). Version dans l'URL ⇒ cache immutable."""
     if platform not in bundle_import.RENDERER_PLATFORMS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plateforme inconnue.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown platform.")
     if not ota._SEMVER.match((version or "").strip()):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Version invalide.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version.")
     if (not bundle_import._RENDERER_PATH_RE.match(filepath or "")
             or ".." in (filepath or "").split("/")):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
     key = f"player-renderers/{platform}/{version}/{filepath}"
     try:
         data = await media.download_file(key)
     except Exception:  # noqa: BLE001 — clé absente / stockage indispo → introuvable
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fichier introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found.")
     return Response(
         content=data, media_type=bundle_import.renderer_file_mime(filepath),
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
@@ -178,10 +178,10 @@ def _validated_min_firmware(value: str | None, model_family: str | None) -> str 
         return None
     if (model_family or "").strip().lower() != "brightsign":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="min_firmware_version n'a de sens que pour un renderer BrightSign.")
+                            detail="min_firmware_version only applies to a BrightSign renderer.")
     if not re.fullmatch(r"\d+(\.\d+)*", v):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="min_firmware_version invalide (attendu ex. 9.1.132).")
+                            detail="Invalid min_firmware_version (expected e.g. 9.1.132).")
     return v
 
 
@@ -193,12 +193,12 @@ async def updates_version_create(
 ) -> CmsPlayerUpdateVersion:
     """Enregistre une version au catalogue (track player/server)."""
     if body.track not in _TRACKS:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Track invalide.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid track.")
     if (body.channel or "stable") not in ("stable", "beta", "lts"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Canal invalide.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid channel.")
     if not ota._SEMVER.match((body.version or "").strip()):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Version invalide (attendu MAJEUR.MINEUR.CORRECTIF).")
+                            detail="Invalid version (expected MAJOR.MINOR.PATCH).")
     min_fw = _validated_min_firmware(body.min_firmware_version, body.model_family)
     row = CmsPlayerUpdateVersion(
         track=body.track, version=body.version.strip(), channel=body.channel or "stable",
@@ -239,7 +239,7 @@ async def updates_version_import(
         fname = url.rstrip("/").split("/")[-1].split("?")[0]
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Fournir un fichier ou une URL.")
+                            detail="Provide a file or a URL.")
     # 2. Détection + dédup + écriture : MÊME service que l'amorçage automatique des bundles à
     #    l'installation (`scripts/seed_player_bundles.py`). Une seule définition de la clé de
     #    stockage et du `download_url` relatif — deux implémentations divergeraient.
@@ -253,7 +253,7 @@ async def updates_version_import(
         msg = str(exc)
         code = (
             status.HTTP_400_BAD_REQUEST
-            if msg.startswith(("Contenu vide", "Archive trop volumineuse"))
+            if msg.startswith(("Empty content", "Archive too large"))
             else status.HTTP_422_UNPROCESSABLE_ENTITY
         )
         raise HTTPException(status_code=code, detail=msg)
@@ -273,9 +273,9 @@ async def updates_version_promote(
         select(CmsPlayerUpdateVersion).where(CmsPlayerUpdateVersion.id_version == id_version)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
     if row.channel == "stable":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Déjà stable.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already stable.")
     row.channel = "stable"
     await db.commit()
     await db.refresh(row)
@@ -295,12 +295,12 @@ async def updates_version_delete(
     )).scalar_one_or_none()
     if used is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Version utilisée par un déploiement.")
+                            detail="Version is used by a deployment.")
     row = (await db.execute(
         select(CmsPlayerUpdateVersion).where(CmsPlayerUpdateVersion.id_version == id_version)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
     await db.delete(row)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -318,7 +318,7 @@ async def updates_version_patch(
         select(CmsPlayerUpdateVersion).where(CmsPlayerUpdateVersion.id_version == id_version)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
     row.min_firmware_version = _validated_min_firmware(
         body.min_firmware_version, row.model_family)
     await db.commit()
@@ -373,7 +373,7 @@ async def updates_served_version_register(
     version = served.get(body.platform)
     if version is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Plateforme servie inconnue.")
+                            detail="Unknown served platform.")
     existing = (await db.execute(
         select(CmsPlayerUpdateVersion).where(
             CmsPlayerUpdateVersion.track == "player",
@@ -421,7 +421,7 @@ async def _deployment_or_404(
     )).scalar_one_or_none()
     if dep is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Déploiement introuvable.")
+                            detail="Deployment not found.")
     return dep
 
 
@@ -433,12 +433,12 @@ async def deployment_create(
 ) -> CmsUpdateDeployment:
     """Crée un déploiement APPROUVÉ (cibles + stratégie) → un target/player en attente (§30.3)."""
     if body.strategy not in _STRATEGIES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Stratégie invalide.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid strategy.")
     version = (await db.execute(
         select(CmsPlayerUpdateVersion).where(CmsPlayerUpdateVersion.id_version == body.id_version)
     )).scalar_one_or_none()
     if version is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
     targets = [Target(target_type=t.target_type, target_id=t.target_id, tag_expr=t.tag_expr or {})
                for t in body.targets]
     try:
@@ -488,7 +488,7 @@ async def deployment_detail(
     )).scalar_one_or_none()
     if dep is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Déploiement introuvable.")
+                            detail="Deployment not found.")
     targets = await ota.deployment_targets(db, id_deployment)
     detail = DeploymentDetail.model_validate(dep)
     detail.targets = [DeploymentTargetRead.model_validate(t) for t in targets]
@@ -504,7 +504,7 @@ async def deployment_cancel(
     """Annule un déploiement encore en attente/en cours/suspendu (targets pending → cancelled)."""
     dep = await _deployment_or_404(db, id_deployment, current_user.id_org)
     if dep.status in ("completed", "cancelled"):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Déjà terminé/annulé.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already completed/cancelled.")
     dep.status = "cancelled"
     dep.completed_at = datetime.now(UTC).replace(tzinfo=None)   # colonne TIMESTAMP (naïf)
     for tgt in await ota.deployment_targets(db, id_deployment):
@@ -527,7 +527,7 @@ async def deployment_pause(
     dep = await _deployment_or_404(db, id_deployment, current_user.id_org)
     if dep.status not in ("pending", "in_progress"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Seul un déploiement en attente/en cours peut être suspendu.")
+                            detail="Only a pending/in-progress deployment can be paused.")
     dep.status = "paused"
     await db.commit()
     await db.refresh(dep)
@@ -550,7 +550,7 @@ async def deployment_resume(
     dep = await _deployment_or_404(db, id_deployment, current_user.id_org)
     if dep.status != "paused":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Seul un déploiement suspendu peut reprendre.")
+                            detail="Only a paused deployment can be resumed.")
     targets = await ota.deployment_targets(db, id_deployment)
     counts: dict[str, int] = {}
     for t in targets:
@@ -587,7 +587,7 @@ async def deployment_delete(
     if dep.status not in ("cancelled", "paused", "completed", "failed"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Déploiement actif — l'annuler ou le suspendre avant de le supprimer.",
+            detail="Deployment is active — cancel or pause it before deleting it.",
         )
     await db.execute(sa_delete(CmsUpdateDeploymentTarget)
                      .where(CmsUpdateDeploymentTarget.id_deployment == id_deployment))

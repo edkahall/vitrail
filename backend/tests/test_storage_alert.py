@@ -38,7 +38,7 @@ def test_message_says_what_to_do_and_reassures_on_playback() -> None:
     subject, body = notifications.build_message("player_storage_full", {
         "player_name": "Android Player", "id_player": 23,
         "disk_usage": 100, "blocked_count": 3,
-    })
+    }, locale="fr")
     assert "Android Player" in subject
     assert "23" in body and "100" in body
     assert "diffuser" in body.lower()          # la diffusion continue
@@ -52,7 +52,7 @@ def test_message_holds_without_the_optional_count() -> None:
     pas. L'alerte doit rester lisible plutôt que d'afficher « None contenu(s) »."""
     _, body = notifications.build_message("player_storage_full", {
         "player_name": "NUC", "id_player": 22, "disk_usage": 97,
-    })
+    }, locale="fr")
     assert "None" not in body
     assert "NUC" in body
 
@@ -99,7 +99,7 @@ def test_message_holds_without_any_percentage() -> None:
     """
     _, body = notifications.build_message("player_storage_full", {
         "player_name": "BrightSign HD1024", "id_player": 13, "disk_usage": None,
-    })
+    }, locale="fr")
     assert "None" not in body and "%" not in body
     assert "plus de place" in body
 

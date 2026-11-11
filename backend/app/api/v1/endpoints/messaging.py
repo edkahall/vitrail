@@ -48,9 +48,9 @@ async def telegram_webhook(
     """Réception des updates du bot. Le secret est REQUIS (pas de bot sans lui)."""
     if not settings.CMS_TELEGRAM_BOT_TOKEN or not settings.CMS_TELEGRAM_WEBHOOK_SECRET:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Canal Telegram non configuré.")
+                            detail="Telegram channel not configured.")
     if x_telegram_bot_api_secret_token != settings.CMS_TELEGRAM_WEBHOOK_SECRET:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Secret invalide.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret.")
     background.add_task(process_telegram_update, update)
     return {"ok": True}
 
@@ -62,7 +62,7 @@ async def new_link_code(
     """Code de liaison opt-in (TTL 10 min, usage unique) → à envoyer au bot : /link CODE."""
     if not settings.CMS_TELEGRAM_BOT_TOKEN:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Canal Telegram non configuré.")
+                            detail="Telegram channel not configured.")
     code = await create_link_code(current_user.id_user, current_user.id_org)
     return {"code": code, "expires_in_s": LINK_CODE_TTL_S, "usage": f"/link {code}"}
 
@@ -115,7 +115,7 @@ async def set_pin(
     quand une action sensible est demandée par messagerie."""
     if not re.fullmatch(r"\d{6}", body.pin):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Le PIN doit faire exactement 6 chiffres.")
+                            detail="The PIN must be exactly 6 digits.")
     user = (await db.execute(
         select(CmsUser).where(CmsUser.id_user == current_user.id_user)
     )).scalar_one()
@@ -152,7 +152,7 @@ async def delete_own_identity(
         )
     )).scalar_one_or_none()
     if ident is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identité introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found.")
     await db.delete(ident)
     await db.commit()
     return {"ok": True}
@@ -196,7 +196,7 @@ async def delete_identity(
         .where(CmsMessagingIdentity.id_identity == id_identity)
     )).scalar_one_or_none()
     if ident is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identité introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found.")
     await db.delete(ident)
     await db.commit()
     return {"ok": True}

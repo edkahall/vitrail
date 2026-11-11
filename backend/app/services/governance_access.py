@@ -101,7 +101,7 @@ async def assert_can_edit_node(
     if not await user_can_edit_node(db, user, id_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Vous n'administrez pas le nœud de gouvernance de {subject}",
+            detail=f"You do not administer the governance node of {subject}",
         )
 
 
@@ -112,8 +112,8 @@ async def assert_can_detach(
     if not await user_can_detach_from_node(db, user, id_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Seul un administrateur d'un nœud parent peut détacher {subject} "
-                   "de la gouvernance",
+            detail=f"Only an administrator of a parent node can detach {subject} "
+                   "from governance",
         )
 
 

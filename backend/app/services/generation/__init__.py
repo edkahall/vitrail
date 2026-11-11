@@ -66,11 +66,11 @@ def raise_for_provider(provider: str, response: httpx.Response) -> None:
     message = _provider_message(response)
     if response.status_code in (401, 403):
         raise GenerationError(
-            f"clé {provider} refusée ({response.status_code})"
-            + (f" : {message}" if message else "")
+            f"{provider} key rejected ({response.status_code})"
+            + (f": {message}" if message else "")
         )
     raise GenerationError(
-        f"{provider} a répondu {response.status_code}" + (f" : {message}" if message else "")
+        f"{provider} responded {response.status_code}" + (f": {message}" if message else "")
     )
 
 
@@ -80,4 +80,4 @@ def network_error(provider: str, exc: Exception) -> GenerationError:
     `httpx.RequestError` couvre ce que « réseau » veut dire : DNS, TCP, TLS, délai. Un
     `HTTPStatusError` n'y a pas sa place : le serveur a répondu, il a répondu non.
     """
-    return GenerationError(f"erreur réseau {provider} : {exc.__class__.__name__}")
+    return GenerationError(f"{provider} network error: {exc.__class__.__name__}")

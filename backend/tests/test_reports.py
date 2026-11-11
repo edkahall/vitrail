@@ -212,3 +212,22 @@ async def test_rights_csv_neutralizes_formula_injection(
     # La valeur est préfixée d'une apostrophe → plus de '=' en tête de cellule.
     assert '\'=HYPERLINK' in csv_resp.text
     assert ',=HYPERLINK' not in csv_resp.text
+
+
+async def test_rights_csv_follows_profile_locale(
+    client: AsyncClient, auth_token: str, db_session: AsyncSession, org: CmsOrganization
+) -> None:
+    """En-têtes du CSV droits = langue du profil du demandeur (défaut anglais)."""
+    from sqlalchemy import update
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    params = {"from": "2026-04-01", "until": "2026-04-30", "format": "csv"}
+    en = await client.get("/api/v1/reports/rights", params=params, headers=headers)
+    assert en.status_code == 200
+    assert en.text.splitlines()[0].startswith("ISRC,Title,Composer")
+
+    await db_session.execute(update(CmsUser).where(CmsUser.id_org == org.id_org).values(locale="de"))
+    await db_session.commit()
+    de = await client.get("/api/v1/reports/rights", params=params, headers=headers)
+    first = de.text.splitlines()[0]
+    assert first.startswith("ISRC,Titel,Komponist") and "Title" not in first
+    assert first.isascii() and " " not in first

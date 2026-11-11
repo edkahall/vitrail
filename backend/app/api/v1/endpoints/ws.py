@@ -3072,11 +3072,11 @@ async def ws_player(
         # via rotation du token stocké au re-provision.
         payload = decode_token(token, verify_exp=False)
     except JWTError:
-        await websocket.close(code=4001, reason="Token invalide")
+        await websocket.close(code=4001, reason="Invalid token")
         return
 
     if payload.get("type") != "player":
-        await websocket.close(code=4001, reason="Type de token invalide")
+        await websocket.close(code=4001, reason="Invalid token type")
         return
 
     id_player = int(payload["sub"])
@@ -3087,7 +3087,7 @@ async def ws_player(
         )).scalar_one_or_none()
 
         if player is None:
-            await websocket.close(code=4001, reason="Player introuvable")
+            await websocket.close(code=4001, reason="Player not found")
             return
 
         # Révocation / grâce (« Option B », 2026-06-26) : le WS ne vérifiait historiquement PAS
@@ -3100,7 +3100,7 @@ async def ws_player(
             player.player_token_prev_until, now,
         )
         if identity == IDENTITY_UNKNOWN:
-            await websocket.close(code=4001, reason="Token révoqué")
+            await websocket.close(code=4001, reason="Token revoked")
             return
 
         await websocket.accept()

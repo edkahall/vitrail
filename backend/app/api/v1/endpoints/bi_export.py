@@ -66,7 +66,7 @@ def _normalize_period(from_: date | None, until: date | None) -> tuple[date, dat
     if from_ > until:
         from_ = until
     if (until - from_).days + 1 > _MAX_PERIOD_DAYS:
-        raise HTTPException(400, f"Période limitée à {_MAX_PERIOD_DAYS} jours.")
+        raise HTTPException(400, f"Period limited to {_MAX_PERIOD_DAYS} days.")
     return from_, until
 
 
@@ -198,8 +198,8 @@ async def export_network_metrics_csv(
         if not await _actor_is_org_admin(db, actor):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Export réservé à l'administrateur de l'organisation "
-                       "(métriques agrégées de tout le réseau)",
+                detail="Export restricted to the organization administrator "
+                       "(aggregated metrics for the whole network)",
             )
     from_, until = _normalize_period(from_, until)
     rows = (await db.execute(
@@ -338,6 +338,6 @@ async def revoke_bi_key(
         )
     )).scalar_one_or_none()
     if key is None or REPORTS_EXPORT_SCOPE not in (key.scopes or []):
-        raise HTTPException(404, "Clé introuvable.")
+        raise HTTPException(404, "Key not found.")
     key.is_active = False
     await db.commit()

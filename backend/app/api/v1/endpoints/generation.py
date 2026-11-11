@@ -114,8 +114,8 @@ async def _require_provider_key(db: AsyncSession, current_user: CmsUser, provide
     if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Aucune clé {_PROVIDER_LABEL.get(provider, provider)} configurée "
-                   f"pour cette organisation (Réglages → Clés IA).",
+            detail=f"No {_PROVIDER_LABEL.get(provider, provider)} key configured "
+                   f"for this organization (Settings → AI keys).",
         )
     return resolved
 
@@ -132,11 +132,11 @@ async def generate_image_endpoint(
     spec = catalog.get_model(model)
     # Les modèles d'édition (détourage) n'exigent pas de prompt — ils transforment la référence.
     if not prompt and not (spec and spec.get("prompt_optional")):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="prompt vide")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty prompt")
     if spec and spec.get("input") == "image" and not body.reference_media_ids:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ce modèle exige au moins une image de référence",
+            detail="this model requires at least one reference image",
         )
     image_urls = await refs.data_uris_for_media(db, current_user.id_org, body.reference_media_ids)
     # Plafond de dépense BYOK (P3.2) : réservé AVANT l'appel — la seule position où un refus
@@ -166,12 +166,12 @@ async def generate_image_endpoint(
         await spend.settle(db, id_spend, None)
         await db.commit()
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Génération échouée : {exc}"
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Generation failed: {exc}"
         ) from exc
     await spend.settle(db, id_spend, img.cost_usd)
 
     ext = (img.content_type.split("/")[-1] or "jpg").replace("jpeg", "jpg")
-    default_name = "Image éditée" if (spec and spec.get("op") == "edit") else "Image IA"
+    default_name = "Edited image" if (spec and spec.get("op") == "edit") else "AI image"
     name = ((body.name or "").strip() or default_name)[:120]
     storage_key = make_storage_key(current_user.id_org, f"{name}.{ext}")
     sha256 = compute_sha256(img.content)
@@ -222,14 +222,14 @@ async def generate_video_endpoint(
     """Lance une génération vidéo ASYNCHRONE (fal, file) → job pending. Poll via GET /generation."""
     prompt = body.prompt.strip()
     if not prompt:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="prompt vide")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty prompt")
     await _require_provider_key(db, current_user, "fal")  # 400 si pas de clé (relue dans le worker)
     model = body.model or fal.DEFAULT_VIDEO_MODEL
     spec = catalog.get_model(model)
     if spec and spec.get("input") == "image" and not body.reference_media_ids:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ce modèle exige au moins une image de référence",
+            detail="this model requires at least one reference image",
         )
     params = dict(body.params or {})
     if body.reference_media_ids:  # résolues en data URIs dans le worker (pas envoyées brutes)
@@ -288,11 +288,11 @@ async def _enforce_elevenlabs_quota(api_key: str, characters: int) -> None:
         return
     when = ""
     if quota.resets_at is not None:
-        when = f" Quota rétabli le {quota.resets_at.strftime('%d/%m/%Y')}."
+        when = f" Quota resets on {quota.resets_at.strftime('%Y-%m-%d')}."
     raise HTTPException(
         status_code=status.HTTP_402_PAYMENT_REQUIRED,
-        detail=(f"Quota ElevenLabs insuffisant : {characters} caractères demandés, "
-                f"{quota.remaining} restants sur {quota.limit} (offre {quota.tier})." + when),
+        detail=(f"Insufficient ElevenLabs quota: {characters} characters requested, "
+                f"{quota.remaining} remaining out of {quota.limit} ({quota.tier} plan)." + when),
     )
 
 
@@ -307,7 +307,7 @@ async def generate_audio_endpoint(
     prompt = body.prompt.strip()
     if not prompt:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="texte/description vide"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty text/description"
         )
     resolved = await _require_provider_key(db, current_user, body.provider)
     if body.provider == "elevenlabs" and body.kind == "voice":
@@ -376,7 +376,7 @@ async def prompt_assist(
     last = body.messages[-1].content if body.messages else ""
     raw = (body.intent or last).strip()
     if not raw:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="idée vide")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty idea")
 
     spec = catalog.get_model(body.model) if body.model else None
     reference_present = bool(body.reference_media_ids) or bool(
@@ -456,7 +456,7 @@ async def campaign_plan(
     """Claude = directeur créatif : brief → concepts (prompts soignés). Aucun coût engagé."""
     brief = body.brief.strip()
     if not brief:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="brief vide")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty brief")
     use_llm, byok_key = await _resolve_creative_llm(db, current_user)
     if use_llm:
         plan = await campaign_svc.plan_campaign(
@@ -484,7 +484,7 @@ async def campaign_execute(
         if spec is None or spec["kind"] != kind or spec["provider"] != provider:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"modèle {kind} invalide",
+                detail=f"invalid {kind} model",
             )
         return mid
 
@@ -534,12 +534,12 @@ async def campaign_execute(
 
     if not specs:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="aucun asset à générer"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="no asset to generate"
         )
     if len(specs) > MAX_CAMPAIGN_ASSETS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"trop d'assets ({len(specs)} > {MAX_CAMPAIGN_ASSETS})",
+            detail=f"too many assets ({len(specs)} > {MAX_CAMPAIGN_ASSETS})",
         )
 
     camp = CmsGenerationCampaign(

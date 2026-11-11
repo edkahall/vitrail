@@ -63,8 +63,8 @@ def cutoff(months: int, now: datetime | None = None) -> datetime:
     """
     if months < MIN_RETENTION_MONTHS:
         raise RetentionRefused(
-            f"rétention de {months} mois refusée : le plancher est de "
-            f"{MIN_RETENTION_MONTHS} mois. Un journal purgé ne se reconstitue pas."
+            f"retention of {months} months refused: the minimum is "
+            f"{MIN_RETENTION_MONTHS} months. A purged log cannot be rebuilt."
         )
     now = now or datetime.now(UTC)
     return now - timedelta(days=30 * months)
@@ -82,11 +82,11 @@ class Plan:
 
     def describe(self) -> str:
         if not self.rows:
-            return f"Aucune entrée antérieure au {self.cutoff.date().isoformat()}."
+            return f"No entries before {self.cutoff.date().isoformat()}."
         span = ""
         if self.oldest and self.newest:
             span = f" ({self.oldest.date().isoformat()} → {self.newest.date().isoformat()})"
-        return (f"{self.rows} entrée(s) antérieure(s) au "
+        return (f"{self.rows} entry(ies) before "
                 f"{self.cutoff.date().isoformat()}{span}.")
 
 
@@ -197,8 +197,8 @@ def purge(conn, cutoff_at: datetime, *, archived: int) -> int:
         return 0
     if archived < plan.rows:
         raise RetentionRefused(
-            f"purge refusée : {plan.rows} entrée(s) à supprimer mais seulement "
-            f"{archived} archivée(s). Reprenez l'archivage avant de purger."
+            f"purge refused: {plan.rows} entry(ies) to delete but only "
+            f"{archived} archived. Re-run the archiving before purging."
         )
     with conn.cursor() as cur:
         cur.execute("DELETE FROM cms_audit_log WHERE created_at < %s", (cutoff_at,))

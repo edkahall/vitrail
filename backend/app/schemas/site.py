@@ -28,9 +28,9 @@ class SiteHoursItem(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> "SiteHoursItem":
         if not 0 <= self.weekday <= 6:
-            raise ValueError("weekday doit être 0..6")
+            raise ValueError("weekday must be 0..6")
         if not self.is_closed and (self.open_time is None or self.close_time is None):
-            raise ValueError("open_time et close_time requis si le jour n'est pas fermé")
+            raise ValueError("open_time and close_time required if the day is not closed")
         return self
 
 
@@ -51,9 +51,9 @@ class SiteExceptionCreate(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> "SiteExceptionCreate":
         if self.date_to < self.date_from:
-            raise ValueError("date_to doit être >= date_from")
+            raise ValueError("date_to must be >= date_from")
         if self.kind == "hours" and (self.open_time is None or self.close_time is None):
-            raise ValueError("open_time et close_time requis pour kind=hours")
+            raise ValueError("open_time and close_time required for kind=hours")
         return self
 
 

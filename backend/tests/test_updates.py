@@ -890,7 +890,7 @@ async def test_renderer_zip_rejects_hostile_paths(
     r = await client.post("/api/v1/updates/versions/import", headers=h, files=up,
                           data={"dry_run": "true"})
     assert r.status_code == 422
-    assert "chemin" in r.json()["detail"]
+    assert "path rejected" in r.json()["detail"]
 
     r = await client.get("/api/v1/updates/renderers/brightsign/7.7.9/..%2Fevil.js")
     assert r.status_code == 404

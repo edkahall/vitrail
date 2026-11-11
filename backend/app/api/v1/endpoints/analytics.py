@@ -522,10 +522,10 @@ async def upload_branding_logo(
 ):
     ext = _LOGO_TYPES.get(file.content_type or "")
     if not ext:
-        raise HTTPException(400, "Format de logo non supporté (PNG/JPEG/SVG/WebP).")
+        raise HTTPException(400, "Unsupported logo format (PNG/JPEG/SVG/WebP).")
     data = await file.read()
     if len(data) > _LOGO_MAX:
-        raise HTTPException(400, "Logo trop volumineux (max 2 Mo).")
+        raise HTTPException(400, "Logo too large (max 2 MB).")
     import io
     key = f"{_LOGO_PREFIX}{current_user.id_org}/logo.{ext}"
     await run_in_threadpool(
@@ -552,7 +552,8 @@ async def delete_branding_logo(
 # ── PDF (§24.3) ──────────────────────────────────────────────────────────────
 
 async def _build_pdf(db: AsyncSession, id_org: int, org_name: str, from_: date, until: date,
-                     player_ids: list[int] | None, tz: ZoneInfo, with_roi: bool) -> bytes:
+                     player_ids: list[int] | None, tz: ZoneInfo, with_roi: bool,
+                     locale: str | None = None) -> bytes:
     payload = await analytics.build_executive_payload(db, id_org, from_, until, player_ids, tz)
     b = await _branding_or_default(db, id_org)
     roi = None
@@ -565,13 +566,13 @@ async def _build_pdf(db: AsyncSession, id_org: int, org_name: str, from_: date, 
             logo_bytes = await run_in_threadpool(_fetch_logo_bytes, b.logo_key)
         except Exception:
             logo_bytes = None
-    generated = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
+    generated = report_pdf.fmt_datetime(datetime.now(tz), locale)
     return await run_in_threadpool(
         report_pdf.build_executive_pdf,
         org_name=org_name, payload=payload,
         branding={"primary_color": b.primary_color, "report_title": b.report_title,
                   "report_subtitle": b.report_subtitle},
-        roi=roi, logo_bytes=logo_bytes, generated_at=generated,
+        roi=roi, logo_bytes=logo_bytes, generated_at=generated, locale=locale,
     )
 
 
@@ -601,9 +602,11 @@ async def executive_report_pdf(
     # il ne doit pas contenir ce que l'écran refuse d'afficher.
     player_ids = await analytics.scoped_report_players(
         db, current_user, None, id_group, id_site, id_site_group)
+    # Langue du document = profil de la personne qui le télécharge (défaut anglais).
     pdf = await _build_pdf(
-        db, current_user.id_org, org.org_name, from_, until, player_ids, tz, roi)
-    filename = f"rapport_executif_{from_.isoformat()}_{until.isoformat()}.pdf"
+        db, current_user.id_org, org.org_name, from_, until, player_ids, tz, roi,
+        locale=current_user.locale)
+    filename = report_render.pdf_filename(from_, until, current_user.locale)
     return Response(
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
@@ -674,7 +677,7 @@ async def revoke_share(
             CmsReportShareLink.id_org == current_user.id_org)
     )).scalar_one_or_none()
     if s is None:
-        raise HTTPException(404, "Lien introuvable.")
+        raise HTTPException(404, "Link not found.")
     s.revoked = True
     await db.commit()
     await db.refresh(s)
@@ -742,7 +745,7 @@ async def _get_schedule_or_404(db: AsyncSession, id_org: int, id_schedule: int
             CmsReportSchedule.id_org == id_org)
     )).scalar_one_or_none()
     if s is None:
-        raise HTTPException(404, "Planification introuvable.")
+        raise HTTPException(404, "Schedule not found.")
     return s
 
 
@@ -791,15 +794,17 @@ async def send_report_now(
     status, detail = "sent", None
     try:
         if not recipients:
-            raise email_delivery.EmailError("aucun destinataire configuré")
+            raise email_delivery.EmailError("no recipient configured")
+        # Même langue que l'envoi planifié : profil du créateur de la planification.
+        locale = await report_render.user_locale(db, s.created_by)
         pdf, org_name = await report_render.render_executive_pdf(
             db, s.id_org, from_d, until, tz, with_roi=s.include_roi,
-            fetch_logo=lambda k: run_in_threadpool(report_render._fetch_logo_bytes, k))
+            fetch_logo=lambda k: run_in_threadpool(report_render._fetch_logo_bytes, k),
+            locale=locale)
+        subject, body, fname = report_render.executive_email(
+            org_name, from_d, until, locale, test=True)
         email_delivery.send_email(
-            to=recipients,
-            subject=f"{org_name} — Rapport exécutif ({from_d} → {until})",
-            body=f"Rapport exécutif Vitrail de {org_name} ({from_d} → {until}).\n\n— Vitrail",
-            attachments=[(f"rapport_executif_{from_d}_{until}.pdf", pdf, "pdf")])
+            to=recipients, subject=subject, body=body, attachments=[(fname, pdf, "pdf")])
     except Exception as e:  # noqa: BLE001
         status, detail = "failed", str(e)[:500]
     h = CmsReportHistory(
@@ -810,7 +815,7 @@ async def send_report_now(
     await db.commit()
     await db.refresh(h)
     if status == "failed":
-        raise HTTPException(502, detail or "Échec de l'envoi.")
+        raise HTTPException(502, detail or "Sending failed.")
     return ReportHistoryRow(
         id_history=h.id_history, id_schedule=h.id_schedule, report_type=h.report_type,
         period_from=h.period_from, period_until=h.period_until, recipients=recipients,
@@ -880,10 +885,10 @@ async def public_share(
     )).scalar_one_or_none()
     now = datetime.now(UTC)
     if s is None or s.revoked or (s.expires_at and s.expires_at < now):
-        raise HTTPException(404, "Lien invalide ou expiré.")
+        raise HTTPException(404, "Invalid or expired link.")
 
     if s.ip_allowlist and not _ip_allowed(_public_client_ip(request), s.ip_allowlist):
-        raise HTTPException(404, "Lien invalide ou expiré.")
+        raise HTTPException(404, "Invalid or expired link.")
 
     if s.password_hash:
         if not x_share_password:
@@ -896,7 +901,7 @@ async def public_share(
         select(CmsOrganization).where(CmsOrganization.id_org == s.id_org)
     )).scalar_one_or_none()
     if org is None or not org.is_active:
-        raise HTTPException(404, "Lien invalide ou expiré.")
+        raise HTTPException(404, "Invalid or expired link.")
 
     tz = _tz()
     b = (await db.execute(
@@ -927,7 +932,7 @@ async def public_share(
             )
         )).scalar_one_or_none()
         if camp is None:
-            raise HTTPException(404, "Lien invalide ou expiré.")
+            raise HTTPException(404, "Invalid or expired link.")
         report = await campaign_report.build_campaign_report(db, camp, tz)
         await _log_access()
         return PublicShareView(

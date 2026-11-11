@@ -163,7 +163,7 @@ async def test_build_campaign_report_aggregates(db_session, org):
 
 
 @pytest.mark.asyncio
-async def test_report_endpoints(client: AsyncClient, db_session, org, headers):
+async def test_report_endpoints(client: AsyncClient, db_session, org, headers, org_admin):
     camp, *_ = await _scene(db_session, org)
 
     r = await client.get(f"/api/v1/campaigns/{camp.id_campaign}/report", headers=headers)
@@ -173,7 +173,13 @@ async def test_report_endpoints(client: AsyncClient, db_session, org, headers):
     r = await client.get(f"/api/v1/campaigns/{camp.id_campaign}/report.pdf", headers=headers)
     assert r.status_code == 200
     assert r.content[:4] == b"%PDF"
-    assert "rapport_campagne" in r.headers["content-disposition"]
+    # nom de fichier dans la langue du profil : anglais par défaut, français si fr
+    assert "campaign_report_" in r.headers["content-disposition"]
+    org_admin.locale = "fr"
+    await db_session.commit()
+    r = await client.get(f"/api/v1/campaigns/{camp.id_campaign}/report.pdf", headers=headers)
+    assert r.status_code == 200
+    assert "rapport_campagne_" in r.headers["content-disposition"]
 
 
 @pytest.mark.asyncio

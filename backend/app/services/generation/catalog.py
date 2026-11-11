@@ -150,7 +150,7 @@ MODELS: list[dict] = [
      "input": "image", "ref_field": "image_url", "ref_multi": False, "max_refs": 1,
      "params": [_P_STRENGTH, _P_SEED]},
     {"id": "fal-ai/nano-banana/edit", "kind": "image", "provider": "fal",
-     "label": "Nano Banana (édition par instruction)", "tier": "high",
+     "label": "Nano Banana (instruction-based editing)", "tier": "high",
      "pricing": {"mode": "per_image", "usd": 0.0398},  # fal : facturé par image
      "input": "image", "ref_field": "image_urls", "ref_multi": True, "max_refs": 4,
      "op": "edit", "params": [_P_SEED]},
@@ -159,7 +159,7 @@ MODELS: list[dict] = [
     # Détourage : enlève le fond → PNG transparent. Aucun prompt/canvas (le modèle préserve les
     # dimensions). `prompt_optional`+`no_image_size` pilotent fal.py (payload réduit) et l'UI.
     {"id": "fal-ai/birefnet", "kind": "image", "provider": "fal",
-     "label": "Détourage (supprimer le fond)", "tier": "low",
+     "label": "Background removal", "tier": "low",
      "pricing": {"mode": "flat", "usd": 0.01},
      "input": "image", "ref_field": "image_url", "ref_multi": False, "max_refs": 1,
      "op": "edit", "prompt_optional": True, "no_image_size": True, "params": []},
@@ -191,11 +191,11 @@ MODELS: list[dict] = [
 
     # ---- IMAGE → VIDÉO (référence requise : anime une image) ----
     {"id": "fal-ai/ltx-video/image-to-video", "kind": "video", "provider": "fal",
-     "label": "LTX (image→vidéo)", "tier": "low", "pricing": {"mode": "per_video", "usd": 0.02},
+     "label": "LTX (image→video)", "tier": "low", "pricing": {"mode": "per_video", "usd": 0.02},
      "supports_aspect_ratio": False, "input": "image", "ref_field": "image_url",
      "ref_multi": False, "max_refs": 1, "params": [_duration_param(5, [5, 8, 10]), _P_VIDEO_RES]},
     {"id": "fal-ai/wan-25-preview/image-to-video", "kind": "video", "provider": "fal",
-     "label": "Wan 2.5 (image→vidéo)", "tier": "high",
+     "label": "Wan 2.5 (image→video)", "tier": "high",
      # 0,15 $/s = facture REELLE relevée par Ed (job 23 : 0,75 $ / 5 s, 2026-07-31) au
      # défaut 720p du studio — cf. le commentaire de l'entrée text-to-video.
      "pricing": {"mode": "per_second", "usd": 0.15},
@@ -203,7 +203,7 @@ MODELS: list[dict] = [
      "input": "image", "ref_field": "image_url", "ref_multi": False, "max_refs": 1,
      "params": [_duration_param(5, [5, 8, 10]), _P_VIDEO_RES]},
     {"id": "fal-ai/kling-video/v2/master/image-to-video", "kind": "video", "provider": "fal",
-     "label": "Kling v2 (image→vidéo)", "tier": "high",
+     "label": "Kling v2 (image→video)", "tier": "high",
      # 0,28 $/s = facture REELLE relevée par Ed (1,40 $ / 5 s, job 24 du 2026-07-31).
      "pricing": {"mode": "per_second", "usd": 0.28}, "supports_negative_prompt": True,
      "supports_aspect_ratio": True, "input": "image", "ref_field": "image_url",
@@ -241,11 +241,11 @@ MODELS: list[dict] = [
 
     # ---- VOIX / MUSIQUE (ElevenLabs direct) ----
     {"id": "elevenlabs/tts", "kind": "voice", "provider": "elevenlabs",
-     "label": "ElevenLabs (voix)", "tier": "moderate",
+     "label": "ElevenLabs (voice)", "tier": "moderate",
      "pricing": {"mode": "per_1k_chars", "usd": 0.10},
      "params": _voice_params(_VOICES_ELEVEN, "voice_id")},
     {"id": "elevenlabs/music", "kind": "music", "provider": "elevenlabs",
-     "label": "ElevenLabs (musique)", "tier": "moderate",
+     "label": "ElevenLabs (music)", "tier": "moderate",
      "pricing": {"mode": "per_second", "usd": 0.003},
      "params": [{"key": "music_length_ms", "control": "number", "label": "music_duration",
                  "default": 30, "min": 5, "max": 120, "step": 1, "unit": "s", "scale_to_ms": True,

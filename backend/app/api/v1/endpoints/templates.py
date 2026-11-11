@@ -60,7 +60,7 @@ async def _validate_node(db: AsyncSession, user: CmsUser, id_node: int | None) -
     )).scalar_one_or_none()
     if ok is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Nœud de gouvernance introuvable")
+                            detail="Governance node not found")
 
 
 def _with_readonly(tmpl: CmsTemplate, editable: bool) -> TemplateRead:
@@ -84,7 +84,7 @@ async def create_template(
     # Gouvernance §XVIII phase 4 : on ne crée que dans un nœud qu'on administre, et un
     # porteur de rôle de gouvernance ne crée pas de template d'organisation (G4).
     await _validate_node(db, current_user, body.id_governance_node)
-    await assert_can_edit_node(db, current_user, body.id_governance_node, "ce template")
+    await assert_can_edit_node(db, current_user, body.id_governance_node, "this template")
     tmpl = CmsTemplate(
         id_org=current_user.id_org,
         template_name=body.template_name,
@@ -168,7 +168,7 @@ async def _get_visible_template(
         )
     )).scalar_one_or_none()
     if tmpl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     _gov_clause, visible, _editable = await content_visibility(db, user)
     node = tmpl.id_governance_node
     hidden = (
@@ -176,7 +176,7 @@ async def _get_visible_template(
         or (node is None and await user_is_governance_scoped(db, user))
     )
     if hidden:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     return tmpl
 
 
@@ -193,16 +193,16 @@ async def update_template(
 ) -> CmsTemplate:
     tmpl = await _get_visible_template(db, current_user, id_template)
     # N3 : un responsable de magasin ne modifie plus une maquette nationale.
-    await assert_can_edit_node(db, current_user, tmpl.id_governance_node, "ce template")
+    await assert_can_edit_node(db, current_user, tmpl.id_governance_node, "this template")
 
     before_render = _render_fingerprint(tmpl)
 
     if "id_governance_node" in body.model_fields_set:
         await _validate_node(db, current_user, body.id_governance_node)
         await assert_can_edit_node(db, current_user, body.id_governance_node,
-                                   "le nœud de destination")
+                                   "the destination node")
         if body.id_governance_node is None:
-            await assert_can_detach(db, current_user, tmpl.id_governance_node, "ce template")
+            await assert_can_detach(db, current_user, tmpl.id_governance_node, "this template")
         tmpl.id_governance_node = body.id_governance_node
     if body.campaign_placement is not None:
         tmpl.campaign_placement = body.campaign_placement
@@ -285,7 +285,7 @@ async def delete_template(
     id_template: int,
     current_user: Annotated[CmsUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    force: bool = Query(False, description="Détacher les playlists concernées et supprimer"),
+    force: bool = Query(False, description="Detach the affected playlists, then delete"),
 ) -> None:
     """Supprime RÉELLEMENT le template (décision d'Ed, 2026-07-28 : « quand on efface, on efface »).
 
@@ -306,17 +306,17 @@ async def delete_template(
     reste — c'est précisément ce qui manquait pour répondre à « qui a supprimé ça ? ».
     """
     tmpl = await _get_visible_template(db, current_user, id_template)
-    await assert_can_edit_node(db, current_user, tmpl.id_governance_node, "ce template")
+    await assert_can_edit_node(db, current_user, tmpl.id_governance_node, "this template")
 
     playlists = await _playlists_using(db, id_template)
     if playlists and not force:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"« {tmpl.template_name} » est utilisé par "
-                + ", ".join(f"« {p.playlist_name} »" for p in playlists[:5])
-                + (f" et {len(playlists) - 5} autre(s)" if len(playlists) > 5 else "")
-                + " — ces playlists passeraient en plein écran mono-zone."
+                f"\"{tmpl.template_name}\" is used by "
+                + ", ".join(f"\"{p.playlist_name}\"" for p in playlists[:5])
+                + (f" and {len(playlists) - 5} other(s)" if len(playlists) > 5 else "")
+                + " — these playlists would switch to full-screen single-zone."
             ),
         )
 

@@ -17,11 +17,11 @@ def validate(template_id: str, fmt: str, inputs: dict) -> dict:
     tpl = TEMPLATES.get(template_id)
     if tpl is None:
         return {"valid": False,
-                "errors": [{"field": "template", "message": f"Template inconnu : {template_id}"}]}
+                "errors": [{"field": "template", "message": f"Unknown template: {template_id}"}]}
     layout = tpl["layouts"].get(fmt)
     if layout is None:
         return {"valid": False,
-                "errors": [{"field": "format", "message": f"Format non supporté : {fmt}"}]}
+                "errors": [{"field": "format", "message": f"Unsupported format: {fmt}"}]}
 
     def _err(field: str, message: str) -> None:
         errors.append({"field": field, "message": message})
@@ -31,33 +31,33 @@ def validate(template_id: str, fmt: str, inputs: dict) -> dict:
         max_chars = spec.get("max_chars")
         if text and max_chars and len(text) > max_chars:
             over = len(text) - max_chars
-            _err(field, f"Trop long pour la zone : raccourcir d'environ {over} caractère(s).")
+            _err(field, f"Too long for the zone: shorten by about {over} character(s).")
 
     # Prix : requis + formatable
     price = _num(inputs.get("price"))
     if price is None:
-        _err("price", "Prix requis (nombre valide, ex. 4,99).")
+        _err("price", "Price required (valid number, e.g. 4.99).")
     elif price < 0:
-        _err("price", "Le prix ne peut pas être négatif.")
+        _err("price", "The price cannot be negative.")
 
     # Prix barré : si fourni, doit être supérieur au prix
     original_raw = inputs.get("original_price")
     if original_raw not in (None, ""):
         original = _num(original_raw)
         if original is None:
-            _err("original_price", "Prix barré invalide (nombre attendu).")
+            _err("original_price", "Invalid original price (number expected).")
         elif price is not None and original <= price:
-            _err("original_price", "Le prix barré doit être supérieur au prix promo.")
+            _err("original_price", "The original price must be higher than the promo price.")
 
     # Remise explicite : cohérence avec le calcul (tolérance 1 point)
     if inputs.get("discount_pct") not in (None, ""):
         explicit = compute_discount_pct(None, None, inputs.get("discount_pct"))
         computed = compute_discount_pct(inputs.get("price"), original_raw, None)
         if explicit is None:
-            _err("discount_pct", "Remise invalide (pourcentage attendu).")
+            _err("discount_pct", "Invalid discount (percentage expected).")
         elif computed is not None and abs(explicit - computed) > 1:
             _err("discount_pct",
-                 f"Remise incohérente : {explicit}% affiché vs {computed}% calculé.")
+                 f"Inconsistent discount: {explicit}% shown vs {computed}% computed.")
 
     # Lisibilité des textes (longueur vs zone)
     _check_len("slogan", (inputs.get("slogan") or "").strip() or None)

@@ -40,7 +40,7 @@ async def _get_group_or_404(id_site_group: int, db: AsyncSession) -> CmsSiteGrou
         )
     ).scalar_one_or_none()
     if group is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Groupe introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group
 
 
@@ -194,7 +194,7 @@ async def add_site_to_group(
         ))
     ).scalar_one_or_none()
     if site is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
 
     existing = (
         await db.execute(
@@ -227,6 +227,6 @@ async def remove_site_from_group(
         )
     ).scalar_one_or_none()
     if member is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membre introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
     await db.delete(member)
     await db.commit()

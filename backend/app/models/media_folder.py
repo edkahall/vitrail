@@ -29,6 +29,9 @@ class CmsMediaFolder(Base):
     folder_name: Mapped[str] = mapped_column(String(255), nullable=False)
     depth: Mapped[int] = mapped_column(Integer, server_default="0", default=0, nullable=False)
     path: Mapped[str] = mapped_column(Text, server_default="", default="", nullable=False)
+    # Dossier créé par le produit (migr 0131) : `advertisers` = racine des dossiers
+    # d'annonceurs. Repéré par cette clé, jamais par son nom ; l'interface traduit le nom.
+    system_key: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )

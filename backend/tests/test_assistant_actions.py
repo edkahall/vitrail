@@ -207,7 +207,7 @@ async def test_execute_denied_without_permission(db_session):
     out = await execute_action(db_session, user, "add_playlist_item",
                                {"id_playlist": pl.id_playlist, "id_media": media.id_media,
                                 "zone_index": 0, "duration_ms": None})
-    assert out["ok"] is False and "Permission refusée" in out["error"]
+    assert out["ok"] is False and "Permission denied" in out["error"]
     # rien n'a été écrit
     items = (await db_session.execute(
         select(CmsPlaylistItem).where(CmsPlaylistItem.id_playlist == pl.id_playlist)
@@ -344,7 +344,7 @@ async def test_batch_denied_if_one_step_lacks_permission(db_session):
          "params": {"id_playlist": pl.id_playlist, "id_media": media.id_media,
                     "zone_index": 0, "duration_ms": None}},
     ])
-    assert out["ok"] is False and "Permission refusée" in out["error"]
+    assert out["ok"] is False and "Permission denied" in out["error"]
     items = (await db_session.execute(
         select(CmsPlaylistItem).where(CmsPlaylistItem.id_playlist == pl.id_playlist)
     )).scalars().all()
@@ -576,7 +576,7 @@ async def test_player_command_denied_for_non_admin(db_session, monkeypatch):
         called.append((ids, cmd))
     monkeypatch.setattr(aa, "_dispatch_player_command", _fake)
     out = await execute_action(db_session, user, "reboot_player", res["params"])
-    assert out["ok"] is False and "Permission refusée" in out["error"]
+    assert out["ok"] is False and "Permission denied" in out["error"]
     assert not called
 
 
@@ -947,7 +947,7 @@ async def test_screen_command_no_equipped_player_errors(db_session):
     await db_session.flush()
     res = await resolve_action(db_session, org.id_org, "screen_set_input",
                                {"target": "tous", "source": "hdmi2"})
-    assert "error" in res and "écran" in res["error"].lower()
+    assert "error" in res and "screen" in res["error"].lower()
 
 
 async def test_configure_audio_basket(db_session, monkeypatch):
@@ -1069,7 +1069,7 @@ async def test_create_event_keep_screens_on(db_session):
                                 "keep_screens_on": True})
     assert "error" not in res, res
     assert res["params"]["keep_screens_on"] is True
-    assert "MAINTENUS ALLUMÉS" in res["description"]
+    assert "KEPT ON" in res["description"]
 
     user = await _user_with_perm(db_session, org, [("events", "create")])
     out = await execute_batch(db_session, user, [
@@ -1126,8 +1126,8 @@ async def test_update_players_resolves_per_platform_stable_only(db_session):
     assert groups["linux"]["player_ids"] == [p_old.id_player]
     assert groups["brightsign"]["id_version"] == v_bs.id_version
     assert groups["brightsign"]["player_ids"] == [p_bs.id_player]
-    assert any("déjà à jour" in w and "NUC-Stock" in w for w in res["warnings"])
-    assert "2 player·s" in res["description"]
+    assert any("already up to date" in w and "NUC-Stock" in w for w in res["warnings"])
+    assert "2 player(s)" in res["description"]
 
 
 async def test_update_players_all_up_to_date_errors(db_session):
@@ -1141,7 +1141,7 @@ async def test_update_players_all_up_to_date_errors(db_session):
                                           channel="stable", model_family="linux"))
     await db_session.flush()
     res = await resolve_action(db_session, org.id_org, "update_players", {"target": "Solo"})
-    assert "error" in res and "déjà à jour" in res["error"]
+    assert "error" in res and "already up to date" in res["error"]
 
 
 async def test_update_players_no_catalog_version_errors(db_session, monkeypatch):
@@ -1159,7 +1159,7 @@ async def test_update_players_no_catalog_version_errors(db_session, monkeypatch)
         return None
     monkeypatch.setattr(ota, "latest_player_version", _none)
     res = await resolve_action(db_session, org.id_org, "update_players", {"target": "Orphan"})
-    assert "error" in res and "catalogue" in res["error"]
+    assert "error" in res and "catalog" in res["error"]
 
 
 async def test_update_players_executes_deployments_and_audit(db_session, monkeypatch):
@@ -1181,7 +1181,7 @@ async def test_update_players_executes_deployments_and_audit(db_session, monkeyp
 
     out = await execute_action(db_session, admin, "update_players", res["params"])
     assert out["ok"] is True, out
-    assert "Déploiement OTA" in out["message"]
+    assert "OTA deployment" in out["message"]
 
     deps = (await db_session.execute(
         select(CmsUpdateDeployment).where(CmsUpdateDeployment.id_org == org.id_org)
@@ -1212,6 +1212,6 @@ async def test_update_players_denied_for_non_admin_and_pin_gated(db_session):
     res = await resolve_action(db_session, org.id_org, "update_players", {"target": "tous"})
     assert "error" not in res
     out = await execute_action(db_session, user, "update_players", res["params"])
-    assert out["ok"] is False and "Permission refusée" in out["error"]
+    assert out["ok"] is False and "Permission denied" in out["error"]
     # 2e facteur messagerie : l'OTA est d'office dans les actions à PIN (décision Ed).
     assert "update_players" in PIN_REQUIRED_ACTIONS

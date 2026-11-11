@@ -93,12 +93,12 @@ async def upload_firmware_version(
     fam = (model_family or "").strip().lower()
     ver = (version or "").strip()
     if not fam or not ver:
-        raise HTTPException(status_code=400, detail="version et model_family requis")
+        raise HTTPException(status_code=400, detail="version and model_family required")
     fname = file.filename or "firmware.bsfw"
     if not fname.lower().endswith(".bsfw"):
-        raise HTTPException(status_code=415, detail="Fichier firmware attendu (.bsfw)")
+        raise HTTPException(status_code=415, detail="Firmware file expected (.bsfw)")
     if file.size and file.size > _MAX_BSFW_BYTES:
-        raise HTTPException(status_code=413, detail="Firmware trop volumineux (> 1 Go)")
+        raise HTTPException(status_code=413, detail="Firmware too large (> 1 GB)")
 
     storage_key = f"firmware/{fam}/{uuid.uuid4().hex}.bsfw"
     sha256, file_size = await stream_upload(file.file, storage_key, "application/octet-stream")
@@ -134,7 +134,7 @@ async def pin_firmware_version(
         )
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=404, detail="Version firmware introuvable")
+        raise HTTPException(status_code=404, detail="Firmware version not found")
     await fw.pin_version(db, row)
     db.add(CmsAuditLog(
         id_org=current_user.id_org, id_user=current_user.id_user,
@@ -160,9 +160,9 @@ async def delete_firmware_version(
         )
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=404, detail="Version firmware introuvable")
+        raise HTTPException(status_code=404, detail="Firmware version not found")
     if row.is_pinned:
-        raise HTTPException(status_code=409, detail="Version épinglée — la dé-épingler avant suppression")
+        raise HTTPException(status_code=409, detail="Version is pinned — unpin it before deleting")
     if row.storage_key:
         try:
             await delete_file(row.storage_key)
@@ -179,7 +179,7 @@ async def _player_or_404(db: AsyncSession, id_player: int, id_org: int) -> CmsPl
         select(CmsPlayer).where(CmsPlayer.id_player == id_player, CmsPlayer.id_org == id_org)
     )).scalar_one_or_none()
     if player is None:
-        raise HTTPException(status_code=404, detail="Player introuvable")
+        raise HTTPException(status_code=404, detail="Player not found")
     return player
 
 
@@ -279,16 +279,16 @@ async def push_firmware_update(
     player = await _player_or_404(db, id_player, current_user.id_org)
     family = fw.player_family(player)
     if not family:
-        raise HTTPException(status_code=400, detail="Famille du player inconnue (capabilities non remontées)")
+        raise HTTPException(status_code=400, detail="Unknown player family (capabilities not reported)")
     pinned = await fw.pinned_for_family(db, family)
     if pinned is None or not pinned.storage_key:
         raise HTTPException(
             status_code=400,
-            detail=f"Aucune version firmware épinglée pour la famille '{family}'",
+            detail=f"No firmware version pinned for family '{family}'",
         )
     current = fw.player_current_firmware(player)
     if current and current == pinned.version:
-        raise HTTPException(status_code=409, detail="Le player est déjà à la version épinglée")
+        raise HTTPException(status_code=409, detail="The player is already on the pinned version")
 
     # Staging + publication = définition UNIQUE dans `services.firmware` (partagée avec
     # l'orchestration renderer→firmware de `ota.create_deployment`, décision 2 du canal unique).

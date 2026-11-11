@@ -82,11 +82,11 @@ def mode_allowed(feed_type: str, display_mode: str) -> bool:
 
 def mode_error(feed_type: str, display_mode: str) -> str:
     if display_mode == "social_wall":
-        return ("Le mode mur social (social_wall) n'est disponible que pour un feed social "
+        return ("Social wall mode (social_wall) is only available for a social feed "
                 "(Instagram, Facebook, X, LinkedIn, TikTok).")
     if display_mode == "data_chart":
-        return "Le mode graphique (data_chart) n'est disponible que pour un feed crypto, financier ou météo."
-    return f"Le mode d'affichage « {display_mode} » n'est pas compatible avec ce type de feed."
+        return "Chart mode (data_chart) is only available for a crypto, financial or weather feed."
+    return f"Display mode \"{display_mode}\" is not compatible with this feed type."
 
 
 class FeedDisplayConfig(BaseModel):
@@ -143,7 +143,7 @@ class FeedConfig(BaseModel):
             return None
         v = v.strip()
         if v and not (v.lower().startswith("http://") or v.lower().startswith("https://")):
-            raise ValueError("L'URL du flux doit commencer par http:// ou https://")
+            raise ValueError("The feed URL must start with http:// or https://")
         return v
 
 
@@ -162,8 +162,8 @@ class FeedCreate(BaseModel):
     def _google_news_imageless(self) -> "FeedCreate":
         if self.feed_type == "google_news" and self.display_mode not in IMAGELESS_MODES:
             raise ValueError(
-                "Le type Google News ne fournit pas d'images : choisissez un mode sans "
-                "image (bandeau défilant ou liste compacte)."
+                "The Google News type provides no images: choose a mode without "
+                "images (scrolling ticker or compact list)."
             )
         return self
 
@@ -171,7 +171,7 @@ class FeedCreate(BaseModel):
     def _video_feed_youtube_only(self) -> "FeedCreate":
         if self.display_mode in VIDEO_MODES and self.feed_type != "youtube_channel":
             raise ValueError(
-                "Le mode vidéo (video_feed) n'est disponible que pour une chaîne YouTube."
+                "Video mode (video_feed) is only available for a YouTube channel."
             )
         return self
 

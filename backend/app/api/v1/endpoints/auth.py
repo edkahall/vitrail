@@ -84,7 +84,7 @@ async def _check_login_blocked(*keys: str) -> None:
             if v is not None and int(v) >= _LOGIN_MAX_ATTEMPTS:
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Trop de tentatives de connexion. Réessayez dans quelques minutes.",
+                    detail="Too many login attempts. Try again in a few minutes.",
                 )
 
 
@@ -135,7 +135,7 @@ async def login(
     )
     user = result.scalar_one_or_none()
     _bad_creds = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants invalides"
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
     )
     if user is None:
         # Anti-énumération par timing : hash factice pour égaliser le temps de réponse.
@@ -174,7 +174,7 @@ async def login(
         ).scalar_one_or_none()
         if org_active is False:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Organisation suspendue"
+                status_code=status.HTTP_403_FORBIDDEN, detail="Organization suspended"
             )
 
     if effective_policy == "required" and not user.totp_enabled:
@@ -186,7 +186,7 @@ async def login(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
-                "message": "2FA obligatoire",
+                "message": "2FA required",
                 "force_2fa_setup": True,
                 "enrolment_token": create_enrolment_token(user.id_user),
             },
@@ -198,20 +198,20 @@ async def login(
             if not verify_totp(reveal_totp_secret(user.totp_secret), body.totp_code):
                 await _record_login_failure(*fail_keys)
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Code TOTP invalide"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code"
                 )
             # Single-use : un code déjà consommé dans sa fenêtre est rejeté (anti-rejeu).
             if await _totp_code_replayed(user.id_user, body.totp_code):
                 await _record_login_failure(*fail_keys)
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Code TOTP déjà utilisé"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="TOTP code already used"
                 )
         elif body.backup_code:
             idx = verify_backup_code(body.backup_code, user.totp_backup_codes)
             if idx is None:
                 await _record_login_failure(*fail_keys)
                 raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Code de secours invalide"
+                    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid backup code"
                 )
             # Consommer le code de secours utilisé
             new_codes = list(user.totp_backup_codes)
@@ -223,7 +223,7 @@ async def login(
             )
         else:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Code TOTP requis"
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="TOTP code required"
             )
 
     # ── Migration paresseuse : chiffre au repos un secret TOTP encore en clair ──
@@ -264,7 +264,7 @@ async def refresh_token(
 ) -> AccessTokenResponse:
     """Échange un refresh token valide contre un nouveau access token."""
     credentials_exc = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token invalide ou révoqué"
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked refresh token"
     )
     try:
         payload = decode_token(body.refresh_token)
@@ -370,11 +370,11 @@ async def totp_verify(
     if reveal_totp_secret(current_user.totp_secret) != body.secret:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Secret TOTP incohérent — relancez /totp/setup",
+            detail="Inconsistent TOTP secret — run /totp/setup again",
         )
     if not verify_totp(body.secret, body.code):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Code TOTP invalide"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid TOTP code"
         )
 
     await db.execute(

@@ -132,7 +132,7 @@ async def _get_player_or_404(id_player: int, db: AsyncSession) -> CmsPlayer:
         await db.execute(select(CmsPlayer).where(CmsPlayer.id_player == id_player))
     ).scalar_one_or_none()
     if player is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     return player
 
 
@@ -145,7 +145,7 @@ async def _enforce_user_scope(db: AsyncSession, current_user: CmsUser, id_player
 
     scope = await user_player_scope(db, current_user)
     if scope is not None and id_player not in scope:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
 
 
 async def _open_hours_per_day(db: AsyncSession, id_site: int | None) -> float:
@@ -232,7 +232,7 @@ async def get_compiled_schedule(
 
     player = await _get_player_or_404(id_player, db)
     if player.id_org != current_user.id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     await _enforce_user_scope(db, current_user, id_player)
 
     # L'aperçu compilé doit montrer ce que CET écran diffuse à CET instant (P2.2) — donc
@@ -275,7 +275,7 @@ async def get_player_readiness(
 
     player = await _get_player_or_404(id_player, db)
     if player.id_org != current_user.id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     await _enforce_user_scope(db, current_user, id_player)
     return await player_readiness(db, id_player)
 
@@ -294,7 +294,7 @@ async def get_player_inventory(
 
     player = await _get_player_or_404(id_player, db)
     if player.id_org != current_user.id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     await _enforce_user_scope(db, current_user, id_player)
 
     store = (player.capabilities or {}).get("store") or {}
@@ -561,8 +561,8 @@ async def update_player(
                             detail={
                                 "code": "LAN_SYNC_HETEROGENEOUS",
                                 "message": (
-                                    "Un groupe LAN Sync avec décodage matériel (mpv/ExoPlayer) doit "
-                                    "être homogène : mêmes OS, renderer et matériel pour tous les players."
+                                    "A LAN Sync group with hardware decoding (mpv/ExoPlayer) must "
+                                    "be homogeneous: same OS, renderer and hardware for all players."
                                 ),
                             },
                         )
@@ -790,7 +790,7 @@ async def send_bulk_player_command(
     if not player_ids:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Aucun player ne correspond à cette cible.",
+            detail="No player matches this target.",
         )
 
     redis = aioredis.from_url(settings.REDIS_URL)
@@ -933,10 +933,10 @@ async def upload_player_screenshot(
     arbitraire pour MinIO) → GET/URL signée inchangés.
     """
     if current_player.id_player != id_player:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Player non autorisé")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Player not authorized")
     body = await request.body()
     if not body:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Corps vide")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty body")
     ctype = request.headers.get("content-type", "image/png").split(";")[0].strip().lower()
     if ctype not in ("image/png", "image/jpeg", "image/webp"):
         ctype = "image/png"
@@ -961,7 +961,7 @@ async def get_player_screenshot(
     try:
         content = await download_file(f"screenshots/{id_player}/latest.png")
     except Exception:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aucune capture disponible")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No screenshot available")
     # Détection par octets magiques (les BrightSign envoient du JPEG, les autres du PNG).
     media_type = "image/jpeg" if content[:3] == b"\xff\xd8\xff" else "image/png"
     return StreamingResponse(io.BytesIO(content), media_type=media_type)

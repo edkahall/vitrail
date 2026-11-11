@@ -67,7 +67,7 @@ def compute_wall_layout(
         ValueError : grille invalide, ou aucune cellule exploitable.
     """
     if cols < 1 or rows < 1:
-        raise ValueError("cols et rows doivent être ≥ 1")
+        raise ValueError("cols and rows must be ≥ 1")
 
     by_cell: dict[tuple[int, int], dict] = {}
     for c in cells:
@@ -78,7 +78,7 @@ def compute_wall_layout(
         if 0 <= r < rows and 0 <= col < cols:
             by_cell[key] = c
     if not by_cell:
-        raise ValueError("aucune cellule valide dans la grille")
+        raise ValueError("no valid cell in the grid")
 
     # Représentant par colonne (largeur + bezels L/R) et par ligne (hauteur + bezels T/B) :
     # 1re cellule trouvée pour cette colonne / cette ligne (grille régulière, cf. docstring).
@@ -113,7 +113,7 @@ def compute_wall_layout(
     canvas_w = sum(col_w) + sum(gap_x)
     canvas_h = sum(row_h) + sum(gap_y)
     if canvas_w <= 0 or canvas_h <= 0:
-        raise ValueError("dimensions de dalle manquantes ou nulles (panel_w_mm/panel_h_mm)")
+        raise ValueError("panel dimensions missing or zero (panel_w_mm/panel_h_mm)")
 
     # Position de départ (mm) de chaque colonne / ligne sur le canvas.
     x_start = [0.0] * cols

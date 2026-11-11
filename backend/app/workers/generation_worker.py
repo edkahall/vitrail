@@ -30,8 +30,8 @@ logger = logging.getLogger(__name__)
 
 _MEDIA_TYPE = {"image": "image", "video": "video", "music": "audio", "voice": "audio"}
 # Nom par défaut quand l'utilisateur n'en fournit pas (PLUS le prompt tronqué).
-_DEFAULT_NAME = {"image": "Image IA", "video": "Vidéo IA", "music": "Musique IA",
-                 "voice": "Voix IA"}
+_DEFAULT_NAME = {"image": "AI image", "video": "AI video", "music": "AI music",
+                 "voice": "AI voice"}
 
 
 def _strip_audio(content: bytes) -> bytes:
@@ -198,14 +198,14 @@ def generate_content(id_job: int) -> dict:
                         prompt=prompt, api_key=api_key, params=p
                     )
             else:
-                return _fail(id_job, f"provider_non_supporté:{provider}", id_campaign)
+                return _fail(id_job, f"unsupported_provider:{provider}", id_campaign)
         else:
-            return _fail(id_job, f"kind_non_supporté:{kind}", id_campaign)
+            return _fail(id_job, f"unsupported_kind:{kind}", id_campaign)
     except GenerationError as exc:
         return _fail(id_job, str(exc), id_campaign)
     except Exception as exc:  # noqa: BLE001
         logger.exception("generate_content %s a échoué", id_job)
-        return _fail(id_job, f"erreur interne: {exc.__class__.__name__}", id_campaign)
+        return _fail(id_job, f"internal error: {exc.__class__.__name__}", id_campaign)
 
     # Retrait optionnel de la bande audio (vidéo) — fiable, agnostique du modèle.
     if kind == "video" and p.get("strip_audio"):
@@ -223,7 +223,7 @@ def generate_content(id_job: int) -> dict:
         content_type, (content_type.split("/")[-1] or "bin")
     )
     # Nom fourni par l'utilisateur (UI-only dans params), sinon défaut générique (pas le prompt).
-    name = ((p.get("name") or "").strip() or _DEFAULT_NAME.get(kind, "Contenu IA"))[:120]
+    name = ((p.get("name") or "").strip() or _DEFAULT_NAME.get(kind, "AI content"))[:120]
     storage_key = make_storage_key(id_org, f"{name}.{ext}")
     sha256 = compute_sha256(content)
     try:
@@ -232,7 +232,7 @@ def generate_content(id_job: int) -> dict:
             Body=content, ContentType=content_type,
         )
     except Exception as exc:  # noqa: BLE001
-        return _fail(id_job, f"upload échoué: {exc.__class__.__name__}", id_campaign)
+        return _fail(id_job, f"upload failed: {exc.__class__.__name__}", id_campaign)
 
     meta = {"generation": {
         "provider": provider, "model": model, "prompt": prompt,

@@ -52,7 +52,7 @@ async def _user_from_token(
     """
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token invalide ou expiré",
+        detail="Invalid or expired token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -155,7 +155,7 @@ def require_permission(module: str, operation: str):
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Permission refusée : {module}:{operation}",
+                detail=f"Permission denied: {module}:{operation}",
             )
         return current_user
 
@@ -190,7 +190,7 @@ def require_admin_or_permission(module: str, operation: str):
             return current_user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission refusée : {module}:{operation}",
+            detail=f"Permission denied: {module}:{operation}",
         )
 
     return _check
@@ -216,7 +216,7 @@ def require_any_permission(*pairs: tuple[str, str]):
     L'org-admin passe toujours, pour la raison exposée dans `require_admin_or_permission`.
     """
     if not pairs:
-        raise ValueError("require_any_permission attend au moins une permission")
+        raise ValueError("require_any_permission expects at least one permission")
 
     async def _check(
         current_user: Annotated[CmsUser, Depends(get_current_user)],
@@ -232,7 +232,7 @@ def require_any_permission(*pairs: tuple[str, str]):
         # c'est celle qu'on veut voir accorder, pas le passe-partout hérité.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission refusée : {pairs[0][0]}:{pairs[0][1]}",
+            detail=f"Permission denied: {pairs[0][0]}:{pairs[0][1]}",
         )
 
     return _check
@@ -245,7 +245,7 @@ async def get_current_player(
     """Valide un token player (type=player) et retourne le CmsPlayer correspondant."""
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token player invalide ou expiré",
+        detail="Invalid or expired player token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -308,7 +308,7 @@ async def require_super_admin(
     if "CMS_SUPER_ADMIN" not in role_keys:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Réservé au Super Administrateur",
+            detail="Restricted to the Super Administrator",
         )
     return current_user
 
@@ -322,7 +322,7 @@ async def require_org_admin(
     if not {"CMS_SUPER_ADMIN", "CMS_ORG_ADMIN"}.intersection(role_keys):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Réservé à l'administrateur d'organisation",
+            detail="Restricted to the organization administrator",
         )
     return current_user
 
@@ -336,7 +336,7 @@ async def require_server_operator(
     if not await rbac.user_is_server_operator(db, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Réservé à l'exploitant du serveur",
+            detail="Restricted to the server operator",
         )
     return current_user
 
@@ -366,7 +366,7 @@ async def require_provisioning_actor(
     if cred.startswith("sfk_"):
         exc = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Clé de provisioning invalide, expirée ou révoquée",
+            detail="Invalid, expired or revoked provisioning key",
             headers={"WWW-Authenticate": "Bearer"},
         )
         key = (
@@ -398,7 +398,7 @@ async def require_provisioning_actor(
     if not {"CMS_SUPER_ADMIN", "CMS_ORG_ADMIN"}.intersection(role_keys):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Réservé à l'administrateur d'organisation ou à une clé de provisioning",
+            detail="Restricted to the organization administrator or a provisioning key",
         )
     return ProvisioningActor(id_org=user.id_org, id_user=user.id_user, kind="user")
 
@@ -424,7 +424,7 @@ async def require_reporting_actor(
     cred = credentials.credentials if credentials else request.query_params.get("api_key")
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Clé BI ou token invalide, expiré ou révoqué",
+        detail="Invalid, expired or revoked BI key or token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     if not cred:
@@ -462,7 +462,7 @@ async def require_reporting_actor(
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission refusée : reports:read",
+            detail="Permission denied: reports:read",
         )
     if user.is_demo:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="demo_blocked")
@@ -491,7 +491,7 @@ async def require_campaign_import_actor(
     cred = credentials.credentials
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Clé d'import ou token invalide, expiré ou révoqué",
+        detail="Invalid, expired or revoked import key or token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     if cred.startswith("sfi_"):
@@ -523,7 +523,7 @@ async def require_campaign_import_actor(
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Permission refusée : campaigns:create",
+            detail="Permission denied: campaigns:create",
         )
     return CampaignImportActor(id_org=user.id_org, id_user=user.id_user, kind="user")
 

@@ -62,7 +62,7 @@ async def _ns_or_404(db: AsyncSession, id_org: int, id_namespace: int) -> CmsTag
         )
     )).scalar_one_or_none()
     if ns is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Namespace introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Namespace not found")
     return ns
 
 
@@ -73,7 +73,7 @@ async def _value_or_404(db: AsyncSession, id_org: int, id_tag: int) -> CmsTagVal
         .where(CmsTagValue.id_tag == id_tag, CmsTagNamespace.id_org == id_org)
     )).scalar_one_or_none()
     if val is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag not found")
     return val
 
 
@@ -87,7 +87,7 @@ async def _validate_tag_ids(db: AsyncSession, id_org: int, id_tags: list[int]) -
         .where(CmsTagValue.id_tag.in_(id_tags), CmsTagNamespace.id_org == id_org)
     )).scalars().all()
     if set(rows) != set(id_tags):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag(s) introuvable(s)")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tag(s) not found")
 
 
 async def _media_tags_dict(db: AsyncSession, id_media: int) -> dict[str, list[str]]:
@@ -160,7 +160,7 @@ async def create_namespace(
         )
     )).scalar_one_or_none()
     if dup is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="namespace_key déjà utilisé")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="namespace_key already in use")
     ns = CmsTagNamespace(
         id_org=current_user.id_org, namespace_key=body.namespace_key, label=body.label,
         match_mode=body.match_mode, applies_to=body.applies_to, is_system=False,
@@ -198,14 +198,14 @@ async def delete_namespace(
 ) -> None:
     ns = await _ns_or_404(db, current_user.id_org, id_namespace)
     if ns.is_system:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Namespace système non supprimable")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="System namespace cannot be deleted")
     used = (await db.execute(
         select(CmsMediaTagValue.id_tag)
         .join(CmsTagValue, CmsTagValue.id_tag == CmsMediaTagValue.id_tag)
         .where(CmsTagValue.id_namespace == id_namespace).limit(1)
     )).scalar_one_or_none()
     if used is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Namespace utilisé par des médias")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Namespace is used by media")
     await db.delete(ns)
     await db.commit()
 
@@ -240,7 +240,7 @@ async def create_value(
         )
     )).scalar_one_or_none()
     if dup is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Valeur déjà existante")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Value already exists")
     v = CmsTagValue(
         id_namespace=id_namespace, tag_value=body.tag_value, label=body.label,
         color=body.color, sort_order=body.sort_order,
@@ -279,7 +279,7 @@ async def delete_value(
         select(CmsMediaTagValue.id_media).where(CmsMediaTagValue.id_tag == id_tag).limit(1)
     )).scalar_one_or_none()
     if used is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tag utilisé par des médias")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tag is used by media")
     await db.delete(v)
     await db.commit()
 
@@ -294,7 +294,7 @@ async def _media_or_404(db: AsyncSession, id_org: int, id_media: int) -> CmsMedi
         )
     )).scalar_one_or_none()
     if m is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     return m
 
 
@@ -336,8 +336,8 @@ async def _assert_media_editable(db: AsyncSession, user: CmsUser, media_ids: lis
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    f"« {media.media_name} » appartient à un nœud de gouvernance que vous "
-                    "n'administrez pas — aucun tag n'a été appliqué"
+                    f"'{media.media_name}' belongs to a governance node you do not "
+                    "administer — no tag was applied"
                 ),
             )
 
@@ -394,7 +394,7 @@ async def _player_or_404(db: AsyncSession, id_org: int, id_player: int) -> CmsPl
         select(CmsPlayer).where(CmsPlayer.id_player == id_player, CmsPlayer.id_org == id_org)
     )).scalar_one_or_none()
     if p is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     return p
 
 
@@ -480,7 +480,7 @@ async def _item_or_404(db: AsyncSession, id_org: int, id_item: int) -> CmsPlayli
         .where(CmsPlaylistItem.id_item == id_item, CmsPlaylist.id_org == id_org)
     )).scalar_one_or_none()
     if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return item
 
 
@@ -544,7 +544,7 @@ async def set_item_tags(
             )
         )).scalars().all())
         if valid_ns != set(body.ns_overrides):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Namespace(s) introuvable(s)")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Namespace(s) not found")
     await db.execute(delete(CmsPlaylistItemTag).where(CmsPlaylistItemTag.id_item == id_item))
     await db.execute(delete(CmsPlaylistItemNsOverride).where(CmsPlaylistItemNsOverride.id_item == id_item))
     for id_tag in set(body.tags):
@@ -572,7 +572,7 @@ async def simulate_tags(
         )
     )).scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
 
     rows = (await db.execute(
         select(CmsPlaylistItem, CmsMedia.media_name)

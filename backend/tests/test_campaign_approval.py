@@ -180,7 +180,7 @@ async def test_flag_on_pending_publish_gate_then_review(
     # publish refusé tant qu'aucun créatif approuvé
     r = await client.post(f"/api/v1/campaigns/{camp.id_campaign}/status",
                           headers=admin_headers, json={"action": "publish"})
-    assert r.status_code == 422 and "approuvé" in r.json()["detail"]
+    assert r.status_code == 422 and "approved" in r.json()["detail"]
 
     # approve (RBAC approvals:approve) → publish passe
     r = await client.post(f"/api/v1/campaigns/creatives/{creative['id_creative']}/approve",

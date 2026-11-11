@@ -85,9 +85,9 @@ class CampaignTargetSpec(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> CampaignTargetSpec:
         if self.target_type in ("site", "site_group", "group", "player") and self.target_id is None:
-            raise ValueError(f"target_id requis pour target_type={self.target_type}")
+            raise ValueError(f"target_id required for target_type={self.target_type}")
         if self.target_type == "tags" and not self.tag_expr:
-            raise ValueError("tag_expr requis pour target_type=tags")
+            raise ValueError("tag_expr required for target_type=tags")
         return self
 
 
@@ -153,9 +153,9 @@ class DailyHours(BaseModel):
         import re
         for v in (self.start, self.end):
             if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
-                raise ValueError("format horaire attendu HH:MM")
+                raise ValueError("expected time format HH:MM")
         if self.end <= self.start:
-            raise ValueError("end doit être > start")
+            raise ValueError("end must be > start")
         return self
 
 
@@ -181,9 +181,9 @@ class CampaignCreate(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> CampaignCreate:
         if self.ends_on < self.starts_on:
-            raise ValueError("ends_on doit être >= starts_on")
+            raise ValueError("ends_on must be >= starts_on")
         if self.campaign_kind == "audio" and not self.spots_per_hour:
-            raise ValueError("spots_per_hour est requis pour une campagne audio")
+            raise ValueError("spots_per_hour is required for an audio campaign")
         return self
 
 
@@ -442,7 +442,7 @@ class ImportTargetSpec(BaseModel):
     @model_validator(mode="after")
     def _name(self) -> ImportTargetSpec:
         if self.type != "org" and not (self.name or "").strip():
-            raise ValueError(f"name requis pour une cible {self.type}")
+            raise ValueError(f"name required for a {self.type} target")
         return self
 
 

@@ -90,7 +90,7 @@ async def _get_url_display_or_404(db: AsyncSession, id_media: int) -> CmsMedia:
         )
     )).scalar_one_or_none()
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="URL display introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="URL display not found")
     return media
 
 
@@ -106,7 +106,7 @@ async def _get_url_display_editable(db: AsyncSession, user: CmsUser, id_media: i
     if not await user_can_edit_node(db, user, media.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas le noeud de gouvernance de ce contenu",
+            detail="You do not administer the governance node of this content",
         )
     return media
 

@@ -405,10 +405,10 @@ async def submit(
     """Crée la demande (pending_review) + commentaire 'submitted' + audit.
     → (request, ctx notification). L'appelant commit puis dispatch."""
     if resource_type not in RESOURCE_TYPES:
-        raise ApprovalError(422, f"Type de ressource non soumissible : {resource_type}")
+        raise ApprovalError(422, f"Resource type cannot be submitted: {resource_type}")
     info = await resolve_resource(db, user.id_org, resource_type, resource_id)
     if info is None:
-        raise ApprovalError(404, "Ressource introuvable")
+        raise ApprovalError(404, "Resource not found")
     # Isolation portail (C2) : un compte annonceur ne soumet que les campagnes de
     # SON annonceur — cross-annonceur = 404 (même règle que _get_campaign B1).
     if user.id_advertiser is not None and resource_type == "campaign":
@@ -416,12 +416,12 @@ async def submit(
             select(CmsCampaign.id_advertiser).where(CmsCampaign.id_campaign == resource_id)
         )).scalar_one_or_none()
         if camp_adv != user.id_advertiser:
-            raise ApprovalError(404, "Ressource introuvable")
+            raise ApprovalError(404, "Resource not found")
     if not info["can_submit"]:
         raise ApprovalError(
-            409, "La ressource n'est pas dans un état soumissible (brouillon requis)")
+            409, "The resource is not in a submittable state (draft required)")
     if await get_active_request(db, user.id_org, resource_type, resource_id) is not None:
-        raise ApprovalError(409, "Une demande d'approbation est déjà active pour cette ressource")
+        raise ApprovalError(409, "An approval request is already active for this resource")
 
     req = CmsApprovalRequest(
         id_org=user.id_org, resource_type=resource_type, resource_id=resource_id,
@@ -431,7 +431,7 @@ async def submit(
     )
     db.add(req)
     await db.flush()  # id_request pour le commentaire/l'audit
-    _add_comment(db, req, user, notes or "Soumis pour approbation", "submitted")
+    _add_comment(db, req, user, notes or "Submitted for approval", "submitted")
     _add_audit(db, req, user, "submitted")
     return req, _notify_ctx(req, user, info["name"], notes)
 
@@ -444,9 +444,9 @@ async def apply_transition(
     → (event_type §XXII, ctx notification)."""
     allowed_from, to_status = _TRANSITIONS[action]
     if req.status not in allowed_from:
-        raise ApprovalError(409, f"Action {action} impossible depuis le statut {req.status}")
+        raise ApprovalError(409, f"Action {action} not allowed from status {req.status}")
     if action in ("reject", "request_changes") and not (comment or "").strip():
-        raise ApprovalError(422, "Un commentaire est obligatoire pour cette action")
+        raise ApprovalError(422, "A comment is required for this action")
 
     req.status = to_status
     req.updated_at = datetime.now(UTC)
@@ -461,8 +461,8 @@ async def apply_transition(
         req.submitted_at = datetime.now(UTC)
 
     default_text = {
-        "approve": "Approuvé", "reject": "Rejeté",
-        "request_changes": "Modifications demandées", "resubmit": "Resoumis",
+        "approve": "Approved", "reject": "Rejected",
+        "request_changes": "Changes requested", "resubmit": "Resubmitted",
     }[action]
     comment_action = {
         "approve": "approved", "reject": "rejected",
@@ -488,7 +488,7 @@ async def mark_published(
     req.status = "published"
     req.published_at = datetime.now(UTC)
     req.updated_at = datetime.now(UTC)
-    _add_comment(db, req, user, "Publié", "published")
+    _add_comment(db, req, user, "Published", "published")
     _add_audit(db, req, user, "published")
     return req
 
@@ -503,7 +503,7 @@ async def cancel_for_resource(
         return
     req.status = "cancelled"
     req.updated_at = datetime.now(UTC)
-    _add_comment(db, req, user, "Ressource supprimée — demande annulée", "cancelled")
+    _add_comment(db, req, user, "Resource deleted — request cancelled", "cancelled")
     _add_audit(db, req, user, "cancelled")
 
 

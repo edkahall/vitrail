@@ -99,12 +99,12 @@ def decode_health(player: Any) -> dict:
             "sw_ceiling": SW_CEILING_LABEL,
             "gpu_vendor": None,
             "gpu_model": None,
-            "warnings": ["Capacités non encore remontées par le player."],
+            "warnings": ["Capabilities not yet reported by the player."],
         }
 
     if sf_mode == "off":
         effective = "software"
-        warnings.append("Décodage matériel désactivé manuellement (SF_HW_DECODE=off).")
+        warnings.append("Hardware decoding manually disabled (SF_HW_DECODE=off).")
     elif method in _NATIVE_HW_METHODS:
         # Plateforme à décodage natif (ChromeOS) : matériel par construction, pas de
         # drapeau `hw_decode_active` à attendre (le navigateur ne l'expose pas).
@@ -115,19 +115,19 @@ def decode_health(player: Any) -> dict:
         effective = "software"
         if method in _VALID_HW_METHODS:
             warnings.append(
-                f"GPU compatible {method} détecté mais le décodage matériel n'est PAS "
-                "actif (le player décode en logiciel)."
+                f"Compatible {method} GPU detected but hardware decoding is NOT "
+                "active (the player is using software decoding)."
             )
         else:
-            warnings.append("Aucun décodage matériel disponible — décodage logiciel.")
+            warnings.append("No hardware decoding available — software decoding.")
     else:
         effective = "unknown"
-        warnings.append("État du décodage matériel indéterminé sur ce player.")
+        warnings.append("Hardware decoding state unknown on this player.")
 
     if effective == "software":
         warnings.append(
-            f"Plafond en logiciel ≈ {SW_CEILING_LABEL} : un média 4K ou 60 fps "
-            "saccadera et risque de désynchroniser un mur."
+            f"Software ceiling ≈ {SW_CEILING_LABEL}: 4K or 60 fps media will "
+            "stutter and may desynchronize a video wall."
         )
 
     severity = {"hardware": "ok", "software": "warning", "unknown": "unknown"}[effective]
@@ -169,7 +169,7 @@ def media_decode_risk(
     if codec_norm and codec_norm not in _SOFTWARE_DECODABLE_CODECS:
         return {
             "verdict": "red",
-            "reason": f"Codec '{codec_norm}' non supporté par le player.",
+            "reason": f"Codec '{codec_norm}' not supported by the player.",
             "effective_decode": effective,
         }
 
@@ -177,7 +177,7 @@ def media_decode_risk(
     if effective == "hardware":
         return {
             "verdict": "green",
-            "reason": "Décodage matériel actif.",
+            "reason": "Hardware decoding active.",
             "effective_decode": effective,
         }
 
@@ -186,7 +186,7 @@ def media_decode_risk(
         verdict = "green" if effective != "unknown" else "amber"
         return {
             "verdict": verdict,
-            "reason": f"Dans le plafond logiciel ({SW_CEILING_LABEL}).",
+            "reason": f"Within the software ceiling ({SW_CEILING_LABEL}).",
             "effective_decode": effective,
         }
 
@@ -195,11 +195,11 @@ def media_decode_risk(
     is_4k = w > 2560 or h > 1440
     if is_4k and f > SW_MAX_FPS:
         verdict = "red"
-        reason = "4K à plus de 30 fps en décodage logiciel : saccade/désync quasi certaine."
+        reason = "4K above 30 fps with software decoding: stutter/desync almost certain."
     else:
         verdict = "amber"
         reason = (
-            f"Au-dessus du plafond logiciel ({SW_CEILING_LABEL}) sans décodage "
-            "matériel : lecture possible mais non garantie sans saccade."
+            f"Above the software ceiling ({SW_CEILING_LABEL}) without hardware "
+            "decoding: playback possible but not guaranteed stutter-free."
         )
     return {"verdict": verdict, "reason": reason, "effective_decode": effective}

@@ -79,13 +79,13 @@ async def decision_refusal(
     role_keys = await rbac.get_user_role_keys(db, user.id_user)
     is_admin = bool({"CMS_SUPER_ADMIN", "CMS_ORG_ADMIN"}.intersection(role_keys))
     if req.submitted_by == user.id_user and not is_admin:
-        return "Vous ne pouvez pas valider votre propre soumission."
+        return "You cannot approve your own submission."
     # « Ancêtre STRICT ou org-admin » = exactement la règle de détachement (N2) et de
     # `node_moderator_user_ids` (D8) : une seule définition du « niveau au-dessus ».
     if not await user_can_detach_from_node(db, user, id_node):
         return (
-            "Cette demande relève d'un nœud de gouvernance que vous n'administrez pas : "
-            "seul un administrateur d'un nœud parent peut la décider."
+            "This request belongs to a governance node you do not administer: "
+            "only an administrator of a parent node can decide on it."
         )
     return None
 

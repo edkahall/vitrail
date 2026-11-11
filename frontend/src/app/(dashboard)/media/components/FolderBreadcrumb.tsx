@@ -1,6 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
+import { useFolderLabel } from '@/lib/folderLabel'
 import { ChevronRight, Folder, Inbox, Layers } from 'lucide-react'
 import type { FolderRead } from '@/types/api'
 import type { FolderFilter } from './FolderTree'
@@ -27,6 +28,7 @@ interface Props {
 
 export default function FolderBreadcrumb({ folders, selected, onSelect }: Props) {
   const t = useTranslations('media')
+  const { label: folderLabel } = useFolderLabel()
   const byId = new Map(folders.map((f) => [f.id_folder, f]))
 
   // Chaîne des ancêtres du dossier courant (racine → courant).
@@ -76,7 +78,7 @@ export default function FolderBreadcrumb({ folders, selected, onSelect }: Props)
                   : 'text-gray-500 hover:text-accent'
               }`}
             >
-              {f.folder_name}
+              {folderLabel(f)}
             </button>
           </span>
         ))}
@@ -94,7 +96,7 @@ export default function FolderBreadcrumb({ folders, selected, onSelect }: Props)
               >
                 <Folder className="w-4 h-4 shrink-0 text-accent-hover" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm text-gray-900">{f.folder_name}</span>
+                  <span className="block truncate text-sm text-gray-900">{folderLabel(f)}</span>
                   <span className="block text-[11px] text-gray-500">
                     {t('folder_counts', { media: f.media_count, sub: f.child_count })}
                   </span>

@@ -317,7 +317,7 @@ async def test_occupancy_check_and_overbook_block(client: AsyncClient, headers,
                       json={"id_media": media.id_media})
     r = await client.post(f"/api/v1/campaigns/{b['id_campaign']}/status", headers=headers,
                           json={"action": "publish"})
-    assert r.status_code == 409 and "Surbooking" in r.json()["detail"]
+    assert r.status_code == 409 and "Overbooking" in r.json()["detail"]
     r = await client.put(f"/api/v1/campaigns/{b['id_campaign']}", headers=headers,
                          json={"overbook_override": True})
     assert r.status_code == 200
@@ -551,7 +551,7 @@ async def test_campaign_import_rejects_unsafe_url(client: AsyncClient, headers, 
     dry = (await client.post("/api/v1/campaigns/import/dry-run",
                              headers=headers, json=order)).json()
     assert dry["ok"] is False
-    assert any("URL non autorisée" in e for e in dry["errors"])
+    assert any("URL not allowed" in e for e in dry["errors"])
 
 
 @pytest.mark.asyncio
@@ -588,10 +588,10 @@ async def test_advertiser_folder_autocreated_and_renamed(client: AsyncClient, he
     assert folder.folder_name == "Brightwell" and folder.depth == 1
     root = (await db_session.execute(select(CmsMediaFolder).where(
         CmsMediaFolder.id_folder == folder.parent_id))).scalar_one()
-    assert root.folder_name == "Annonceurs" and root.parent_id is None
+    assert root.system_key == "advertisers" and root.parent_id is None
     assert folder.path == f"{root.path}.{folder.id_folder}"
 
-    # 2e annonceur → même racine « Annonceurs »
+    # 2e annonceur → même racine des annonceurs
     adv2 = await _advertiser(client, headers, "Bosch")
     folder2 = (await db_session.execute(select(CmsMediaFolder).where(
         CmsMediaFolder.id_folder == adv2["id_folder"]))).scalar_one()
@@ -603,3 +603,52 @@ async def test_advertiser_folder_autocreated_and_renamed(client: AsyncClient, he
     assert r.status_code == 200
     await db_session.refresh(folder)
     assert folder.folder_name == "Brightwell France"
+
+
+@pytest.mark.asyncio
+async def test_advertiser_root_found_by_key_not_by_name(client: AsyncClient, headers,
+                                                         org_admin, db_session, org):
+    """La racine des annonceurs est repérée par `system_key` (migr 0131), jamais par son
+    nom : un dossier utilisateur homonyme n'est pas réutilisé, et la racine système ne se
+    renomme ni ne se déplace (son nom affiché est traduit par l'interface)."""
+    from app.models.media_folder import CmsMediaFolder
+    from app.models.role import CmsPermission, CmsRolePermission
+    # Le rôle campagne de la fixture n'a pas les droits médiathèque : on les lui ajoute.
+    id_role = (await db_session.execute(select(CmsUserRoleAssignment.id_role).where(
+        CmsUserRoleAssignment.id_user == org_admin.id_user))).scalar_one()
+    for op in ("read", "edit"):
+        await db_session.execute(
+            pg_insert(CmsPermission).values(module="media", operation=op, label=f"media.{op}")
+            .on_conflict_do_nothing(constraint="uq_cms_permissions_module_operation"))
+        perm = (await db_session.execute(select(CmsPermission).where(
+            CmsPermission.module == "media", CmsPermission.operation == op))).scalar_one()
+        db_session.add(CmsRolePermission(id_role=id_role, id_permission=perm.id_permission))
+    await db_session.commit()
+    # Témoin : un dossier UTILISATEUR portant exactement le nom de repli.
+    r = await client.post("/api/v1/media/folders", headers=headers,
+                          json={"folder_name": "Advertisers", "parent_id": None})
+    assert r.status_code == 201, r.text
+    user_root_id = r.json()["id_folder"]
+    assert r.json()["system_key"] is None
+
+    adv = await _advertiser(client, headers, "Keyed Co")
+    folder = (await db_session.execute(select(CmsMediaFolder).where(
+        CmsMediaFolder.id_folder == adv["id_folder"]))).scalar_one()
+    assert folder.parent_id != user_root_id
+    root = (await db_session.execute(select(CmsMediaFolder).where(
+        CmsMediaFolder.id_folder == folder.parent_id))).scalar_one()
+    assert root.system_key == "advertisers"
+
+    listed = (await client.get("/api/v1/media/folders", headers=headers)).json()
+    assert {f["id_folder"]: f["system_key"] for f in listed}[root.id_folder] == "advertisers"
+
+    r = await client.put(f"/api/v1/media/folders/{root.id_folder}", headers=headers,
+                         json={"folder_name": "Sponsors"})
+    assert r.status_code == 409, r.text
+    r = await client.put(f"/api/v1/media/folders/{root.id_folder}", headers=headers,
+                         json={"parent_id": user_root_id})
+    assert r.status_code == 409, r.text
+    # Le dossier de l'annonceur, lui, reste un dossier ordinaire.
+    r = await client.put(f"/api/v1/media/folders/{folder.id_folder}", headers=headers,
+                         json={"folder_name": "Keyed Co (2026)"})
+    assert r.status_code == 200, r.text

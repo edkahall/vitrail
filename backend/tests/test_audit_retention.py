@@ -64,7 +64,7 @@ def _add(c, *, days_ago: int, id_user=None, action: str = ACTION) -> None:
 def test_retention_below_the_floor_is_refused():
     """Le garde-fou qui compte le plus : `--months 3` au lieu de `--months 30` est une
     faute de frappe irrattrapable une fois exécutée."""
-    with pytest.raises(RetentionRefused, match="plancher"):
+    with pytest.raises(RetentionRefused, match="the minimum is"):
         audit_retention.cutoff(audit_retention.MIN_RETENTION_MONTHS - 1)
     # la borne juste au plancher est acceptée
     assert audit_retention.cutoff(audit_retention.MIN_RETENTION_MONTHS) is not None
@@ -83,7 +83,7 @@ async def test_survey_counts_only_what_is_past_the_cutoff(conn):
     at = audit_retention.cutoff(6)
     plan = audit_retention.survey(conn, at)
     assert plan.rows == 1, "seule l'entrée au-delà de la rétention est concernée"
-    assert "1 entrée" in plan.describe()
+    assert "1 entry" in plan.describe()
 
 
 async def test_archive_writes_every_due_entry(conn):
@@ -114,7 +114,7 @@ async def test_purge_refuses_when_the_archive_holds_less_than_it_deletes(conn):
     for d in (400, 401, 402):
         _add(conn, days_ago=d)
     at = audit_retention.cutoff(6)
-    with pytest.raises(RetentionRefused, match="seulement 2"):
+    with pytest.raises(RetentionRefused, match="but only 2"):
         audit_retention.purge(conn, at, archived=2)
     conn.rollback()
     assert audit_retention.survey(conn, at).rows == 3, "rien ne doit avoir été supprimé"

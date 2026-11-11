@@ -90,7 +90,7 @@ async def _validate_node_org(db: AsyncSession, current_user: CmsUser, id_node: i
     )).scalar_one_or_none()
     if node is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Nœud de gouvernance introuvable"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Governance node not found"
         )
 
 
@@ -99,7 +99,7 @@ async def _enforce_playlist_node_edit(db: AsyncSession, current_user: CmsUser, p
     if not await user_can_edit_node(db, current_user, pl.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas le nœud de gouvernance de cette playlist",
+            detail="You do not administer this playlist's governance node",
         )
 
 
@@ -132,9 +132,9 @@ async def _assert_playlist_visible(
     gov = pl.id_governance_node
     _clause, visible, editable = await content_visibility(db, user)
     if gov is not None and visible is not None and gov not in visible:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     if gov is None and await user_is_governance_scoped(db, user):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     return bool(gov is not None and editable is not None and gov not in editable), editable
 
 
@@ -150,7 +150,7 @@ async def _get_visible_playlist(
         )
     )).scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     await _assert_playlist_visible(db, user, pl)
     return pl
 
@@ -173,7 +173,7 @@ async def get_editable_playlist(
         )
     )).scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     await _enforce_playlist_node_edit(db, current_user, pl)
     return pl
 
@@ -495,7 +495,7 @@ async def _assert_template_visible(
         )
     )).scalar_one_or_none()
     if tmpl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
     _clause, visible, _editable = await content_visibility(db, user)
     node = tmpl.id_governance_node
     hidden = (
@@ -503,7 +503,7 @@ async def _assert_template_visible(
         or (node is None and await user_is_governance_scoped(db, user))
     )
     if hidden:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
 
 
 def _audit(user: CmsUser, action: str, id_playlist: int, detail: dict) -> CmsAuditLog:
@@ -557,7 +557,7 @@ async def _assert_media_addable(
         stmt = stmt.where(clause)
     media = (await db.execute(stmt)).scalar_one_or_none()
     if media is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Média introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     return media
 
 
@@ -577,7 +577,7 @@ async def create_playlist(
     if not await user_can_edit_node(db, current_user, body.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas ce nœud de gouvernance",
+            detail="You do not administer this governance node",
         )
     await _assert_template_visible(db, current_user, body.id_template)
     pl = CmsPlaylist(
@@ -610,9 +610,9 @@ async def list_playlists(
     db: Annotated[AsyncSession, Depends(get_db)],
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    q: Optional[str] = Query(None, description="Recherche par nom (côté SERVEUR)"),
+    q: Optional[str] = Query(None, description="Search by name (server-side)"),
     id_governance_node: Optional[int] = Query(
-        None, description="Ne garder que les playlists rattachées à ce nœud de gouvernance",
+        None, description="Keep only playlists attached to this governance node",
     ),
 ) -> list[PlaylistRead]:
     """Liste des playlists — `q` cherche par NOM, côté serveur.
@@ -826,7 +826,7 @@ async def get_playlist(
     )
     pl = result.scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
 
     # Gouvernance D6 : une playlist gouvernée hors des nœuds visibles → 404 (cross-nœud
     # invisible comme le cross-tenant). governed_readonly/requires_approval pour le front.
@@ -1005,7 +1005,7 @@ async def update_playlist(
     )
     pl = result.scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     # Gouvernance : édition gardée par le nœud ACTUEL ; un changement de nœud exige aussi
     # d'administrer le nœud CIBLE (miroir des programmes).
     await _enforce_playlist_node_edit(db, current_user, pl)
@@ -1014,7 +1014,7 @@ async def update_playlist(
         if not await user_can_edit_node(db, current_user, body.id_governance_node):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Vous n'administrez pas le nœud de gouvernance cible",
+                detail="You do not administer the target governance node",
             )
         # N2 : détacher (→ NULL) sort la playlist de la gouvernance (fin de la modération
         # D7) — réservé à un ancêtre STRICT ou à l'org-admin, jamais l'admin du nœud même.
@@ -1023,8 +1023,8 @@ async def update_playlist(
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Seul un administrateur d'un nœud parent peut détacher "
-                       "cette playlist de la gouvernance",
+                detail="Only an administrator of a parent node can detach "
+                       "this playlist from governance",
             )
         pl.id_governance_node = body.id_governance_node
 
@@ -1087,7 +1087,7 @@ async def delete_playlist(
     )
     pl = result.scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     await _enforce_playlist_node_edit(db, current_user, pl)
     # Référencée comme sous-playlist par un parent non supprimé → refus explicite
     # (la retirer des parents d'abord) plutôt qu'un slot silencieusement ignoré.
@@ -1102,7 +1102,7 @@ async def delete_playlist(
     if parent is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Playlist utilisée comme sous-playlist par « {parent} » — retirez-la d'abord",
+            detail=f"Playlist used as a sub-playlist by '{parent}' — remove it from there first",
         )
     pl.is_deleted = True
     # La ligne disparaît de toutes les vues, le journal reste : c'est la seule façon de
@@ -1165,7 +1165,7 @@ async def add_playlist_item(
     if media.media_type == "audio":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Un média audio ne peut pas être ajouté à une playlist standard (réservé aux paniers audio)",
+            detail="Audio media cannot be added to a standard playlist (reserved for audio baskets)",
         )
 
     draft = await _ensure_draft(db, pl)
@@ -1274,7 +1274,7 @@ async def remove_playlist_item(
     draft = await _ensure_draft(db, pl)
     new = [e for e in draft if e["uid"] != id_item]
     if len(new) == len(draft):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     pl.draft_items = new
     await db.commit()
 
@@ -1297,7 +1297,7 @@ async def update_playlist_item(
     draft = await _ensure_draft(db, pl)
     entry = next((e for e in draft if e["uid"] == id_item), None)
     if entry is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     if "duration_ms" in body.model_fields_set:
         entry["duration_ms"] = body.duration_ms          # None = repli durée par défaut player
     if "transition_type" in body.model_fields_set and body.transition_type is not None:
@@ -1337,7 +1337,7 @@ async def duplicate_playlist_item(
     ordered = sorted(draft, key=lambda x: x["sort_order"])
     idx = next((i for i, e in enumerate(ordered) if e["uid"] == id_item), None)
     if idx is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     src = ordered[idx]
     copy = {
         "uid": _next_uid(draft), "id_media": src.get("id_media"), "sort_order": 0,
@@ -1367,7 +1367,7 @@ async def _get_item(db: AsyncSession, id_playlist: int, id_item: int) -> CmsPlay
         )
     )).scalar_one_or_none()
     if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     return item
 
 
@@ -1393,7 +1393,7 @@ async def list_item_rules(
     if pl.draft_items is not None:
         e = _draft_find(pl.draft_items, id_item)
         if e is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
         return [ItemRuleRead(id_item_rule=-(i + 1), id_item=id_item, **r)
                 for i, r in enumerate(e.get("rules", []))]
     await _get_item(db, id_playlist, id_item)
@@ -1421,7 +1421,7 @@ async def set_item_rules(
     draft = await _ensure_draft(db, pl)
     e = _draft_find(draft, id_item)
     if e is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     e["rules"] = [r.model_dump(mode="json") for r in body]
     pl.draft_items = draft
     await db.commit()
@@ -1457,13 +1457,13 @@ async def publish_playlist(
         )
     )).scalar_one_or_none()
     if pl is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
     await _enforce_playlist_node_edit(db, current_user, pl)
     if await _node_requires_approval(db, pl.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Contenu gouverné sous modération : soumettez la playlist à l'approbation "
-                   "(la publication se fait à l'approbation).",
+            detail="Governed content under moderation: submit the playlist for approval "
+                   "(it is published on approval).",
         )
     if not playlist_publish.has_draft(pl):
         return await get_playlist(id_playlist, current_user, db)
@@ -1473,7 +1473,7 @@ async def publish_playlist(
     except playlist_publish.DraftApplyError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Sous-playlist invalide : {exc}") from exc
+            detail=f"Invalid sub-playlist: {exc}") from exc
     # Le geste qui engage : ce contenu part sur les écrans.
     db.add(_audit(current_user, "publish", id_playlist, {
         "playlist_name": pl.playlist_name,
@@ -1536,7 +1536,7 @@ async def submit_playlist_approval(
     if not await _node_requires_approval(db, pl.id_governance_node):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Cette playlist n'est pas sous modération : publiez-la directement.",
+            detail="This playlist is not under moderation: publish it directly.",
         )
     try:
         req, _ctx = await approvals_svc.submit(db, current_user, "playlist", id_playlist)
@@ -1699,7 +1699,7 @@ async def simulate_timeline(
         hh, mm = (int(x) for x in body.start_time.split(":")[:2])
         t = datetime.combine(day, time_cls(hh, mm))
     except (ValueError, TypeError):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date/start_time invalide")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid date/start_time")
     eod = datetime.combine(day, time_cls(23, 59, 59))
 
     # Simulation de la PLAYLIST SEULE (round-robin wall-clock honorant les item-rules).

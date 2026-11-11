@@ -24,23 +24,23 @@ from app.services.password_policy import check_password
 
 def test_check_password_too_short():
     missing = check_password("Ab1!", min_len=10, policy={})
-    assert any("caractères" in m for m in missing)
+    assert any("characters" in m for m in missing)
 
 
 def test_check_password_absolute_floor():
     # Même si l'org met min_len=2, le plancher dur de 8 s'applique.
     missing = check_password("Ab1!def", min_len=2, policy={})  # 7 chars
-    assert any("8 caractères" in m for m in missing)
+    assert any("8 characters" in m for m in missing)
     assert check_password("Ab1!defg", min_len=2, policy={}) == []  # 8 chars → ok
 
 
 def test_check_password_complexity_requirements():
     policy = {"uppercase": True, "digit": True, "special": True, "lowercase": True}
     missing = check_password("aaaaaaaaaa", min_len=10, policy=policy)
-    assert "une lettre majuscule" in missing
-    assert "un chiffre" in missing
-    assert "un caractère spécial" in missing
-    assert "une lettre minuscule" not in missing
+    assert "an uppercase letter" in missing
+    assert "a digit" in missing
+    assert "a special character" in missing
+    assert "a lowercase letter" not in missing
 
 
 def test_check_password_strong_passes():
@@ -100,7 +100,7 @@ async def test_create_user_rejects_weak_password(client: AsyncClient, admin_toke
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert resp.status_code == 422
-    assert "Mot de passe" in resp.json()["detail"]
+    assert "Password" in resp.json()["detail"]
 
 
 async def test_create_user_accepts_strong_password(client: AsyncClient, admin_token: str) -> None:

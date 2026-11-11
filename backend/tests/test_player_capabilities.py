@@ -64,7 +64,7 @@ def test_decode_health_software_with_capable_gpu() -> None:
     }))
     assert h["effective_decode"] == "software"
     assert h["severity"] == "warning"
-    assert any("n'est PAS" in w or "logiciel" in w for w in h["warnings"])
+    assert any("is NOT" in w or "software" in w for w in h["warnings"])
     assert any(SW_CEILING_LABEL in w for w in h["warnings"])
 
 
@@ -91,7 +91,7 @@ def test_decode_health_sf_mode_off() -> None:
         "hw_decode": "d3d11", "hw_decode_active": True, "sf_hw_decode": "off",
     }))
     assert h["effective_decode"] == "software"  # override gagne sur active=True
-    assert any("désactivé" in w for w in h["warnings"])
+    assert any("manually disabled" in w for w in h["warnings"])
 
 
 # ── media_decode_risk (pur) ──────────────────────────────────────────────────

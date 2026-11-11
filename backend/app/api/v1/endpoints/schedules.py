@@ -99,7 +99,7 @@ async def _validate_node_org(db: AsyncSession, current_user: CmsUser, id_node: i
     )).scalar_one_or_none()
     if node is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Nœud de gouvernance introuvable"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Governance node not found"
         )
 
 
@@ -108,7 +108,7 @@ async def _enforce_node_edit(db: AsyncSession, current_user: CmsUser, id_node: i
     if not await user_can_edit_node(db, current_user, id_node):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Vous n'administrez pas le nœud de gouvernance de ce programme",
+            detail="You do not administer the governance node of this schedule",
         )
 
 
@@ -136,7 +136,7 @@ async def _get_visible_schedule(
         stmt = stmt.where(clause)
     sched = (await db.execute(stmt)).scalar_one_or_none()
     if sched is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found")
     return sched
 
 
@@ -170,7 +170,7 @@ async def _validate_targets_exist(
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Cible introuvable dans l'organisation ({t_type}) : {missing}",
+                detail=f"Target not found in the organization ({t_type}): {missing}",
             )
 
 
@@ -199,7 +199,7 @@ async def _validate_playlist_choice(
         stmt = stmt.where(clause)
     ok = (await db.execute(stmt)).scalar_one_or_none()
     if ok is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playlist not found")
 
 
 def _audit(user: CmsUser, action: str, sched: CmsSchedule, detail: dict | None = None) -> CmsAuditLog:
@@ -282,8 +282,8 @@ async def _enforce_targets_in_scope(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"Cible hors du périmètre du nœud « {node.node_name} » : {names}. "
-                "Une cible de programme gouverné ne peut que restreindre les écrans du nœud."
+                f"Target outside the scope of node '{node.node_name}': {names}. "
+                "A governed schedule's target can only narrow down the node's players."
             ),
         )
 
@@ -444,7 +444,7 @@ async def governance_scope_check(
     node = await _governed_node(db, current_user.id_org, body.id_governance_node)
     if node is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Nœud de gouvernance introuvable")
+                            detail="Governance node not found")
     perimeter = await node_perimeter_players(db, current_user.id_org, node)
     tgts = [(t.target_type, t.target_id) for t in body.targets]
     kept = await resolved_players(db, current_user.id_org, node, tgts, perimeter=perimeter)
@@ -485,7 +485,7 @@ async def create_schedule(
     if body.schedule_kind == "audio":
         if not body.baskets:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail="Au moins un panier requis pour un schedule audio")
+                                detail="At least one basket is required for an audio schedule")
         ids = [b.id_basket for b in body.baskets]
         valid = set((await db.execute(
             select(CmsAudioBasket.id_basket).where(
@@ -496,11 +496,11 @@ async def create_schedule(
         invalid = set(ids) - valid
         if invalid:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail=f"Paniers introuvables : {sorted(invalid)}")
+                                detail=f"Baskets not found: {sorted(invalid)}")
     else:
         if body.id_playlist is None:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail="id_playlist requis pour un schedule contenu")
+                                detail="id_playlist is required for a content schedule")
         # Existence + ORG + visibilité gouvernance (l'ancien contrôle ne vérifiait que
         # l'existence : la playlist d'une autre organisation passait en 201).
         await _validate_playlist_choice(db, current_user, body.id_playlist)
@@ -576,14 +576,14 @@ async def list_schedules(
     current_user: Annotated[CmsUser, Depends(get_current_user)],
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    kind: Optional[str] = Query(None, description="Filtre : content | audio"),
+    kind: Optional[str] = Query(None, description="Filter: content | audio"),
     target_type: Optional[str] = Query(
         None, pattern="^(player|player_group|group|site|site_group)$",
-        description="Filtre cible : ne garder que les programmes touchant cette cible",
+        description="Target filter: keep only schedules that reach this target",
     ),
     target_id: Optional[int] = Query(None),
     id_governance_node: Optional[int] = Query(
-        None, description="Ne garder que les programmes rattachés à ce nœud de gouvernance",
+        None, description="Keep only schedules attached to this governance node",
     ),
 ) -> list[ScheduleRead]:
     stmt = (
@@ -703,8 +703,8 @@ async def update_schedule(
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Seul un administrateur d'un nœud parent peut détacher "
-                       "ce programme de la gouvernance",
+                detail="Only an administrator of a parent node can detach "
+                       "this schedule from governance",
             )
         sched.id_governance_node = body.id_governance_node
 
@@ -851,10 +851,10 @@ async def _assert_player_readable(
         )
     )).scalar_one_or_none()
     if player is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     scope = await user_player_scope(db, user)
     if scope is not None and id_player not in scope:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     return player
 
 
@@ -977,7 +977,7 @@ async def simulate_player_day(
     try:
         day = date_cls.fromisoformat(body.date)
     except (ValueError, TypeError):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date invalide")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid date")
     weekday = day.weekday()
     # Le jour simulé est celui de l'ÉCRAN (P2.2) : les bornes UTC des events se ramènent
     # au fuseau de son site, sinon la simulation décale toute la journée.

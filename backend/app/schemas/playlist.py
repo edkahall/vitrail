@@ -24,23 +24,23 @@ class ItemRuleBase(BaseModel):
     @classmethod
     def _valid_rule_type(cls, v: str) -> str:
         if v not in ("always", "weekly", "date_range"):
-            raise ValueError("rule_type invalide (always|weekly|date_range)")
+            raise ValueError("invalid rule_type (always|weekly|date_range)")
         return v
 
     @field_validator("scope")
     @classmethod
     def _valid_scope(cls, v: str) -> str:
         if v not in ("default", "player", "player_group"):
-            raise ValueError("scope invalide (default|player|player_group)")
+            raise ValueError("invalid scope (default|player|player_group)")
         return v
 
     @model_validator(mode="after")
     def _check_target(self):
         if self.scope == "default":
             if self.target_id is not None:
-                raise ValueError("target_id interdit pour scope=default")
+                raise ValueError("target_id not allowed for scope=default")
         elif self.target_id is None:
-            raise ValueError("target_id obligatoire pour scope player/player_group")
+            raise ValueError("target_id required for scope player/player_group")
         return self
 
 
@@ -77,7 +77,7 @@ class PlaylistItemCreate(BaseModel):
     @model_validator(mode="after")
     def _one_of(self):
         if (self.id_media is None) == (self.id_child_playlist is None):
-            raise ValueError("id_media OU id_child_playlist requis (exactement un)")
+            raise ValueError("id_media OR id_child_playlist required (exactly one)")
         return self
 
 
@@ -177,7 +177,7 @@ class PlaylistUpdate(BaseModel):
     @classmethod
     def _valid_rotation(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v not in ("all", "one_sequential", "one_random"):
-            raise ValueError("rotation_mode invalide (all|one_sequential|one_random)")
+            raise ValueError("invalid rotation_mode (all|one_sequential|one_random)")
         return v
 
 

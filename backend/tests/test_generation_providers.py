@@ -98,7 +98,7 @@ def test_provider_refusal_on_401_names_the_key_without_losing_the_explanation():
     resp = _response(401, json_body={"detail": "Invalid API key"})
     with pytest.raises(GenerationError) as exc:
         raise_for_provider("ElevenLabs", resp)
-    assert "clé" in str(exc.value) and "Invalid API key" in str(exc.value)
+    assert "key rejected" in str(exc.value) and "Invalid API key" in str(exc.value)
 
 
 def test_provider_refusal_says_nothing_on_success():
@@ -120,7 +120,7 @@ def test_network_error_names_only_the_transport():
     from app.services.generation import network_error
 
     err = network_error("ElevenLabs", httpx.ConnectTimeout("timed out"))
-    assert "réseau" in str(err) and "ConnectTimeout" in str(err)
+    assert "network" in str(err) and "ConnectTimeout" in str(err)
 
 
 # ── Le défaut tel qu'un client le vivait ──────────────────────────────────────
@@ -136,7 +136,7 @@ def test_a_402_on_a_voice_is_not_reported_as_a_network_failure(monkeypatch):
     message = str(exc.value)
     assert _LIBRARY_VOICE_REFUSAL in message
     assert "402" in message
-    assert "réseau" not in message.lower()          # ⛔ la mauvaise cause
+    assert "network" not in message.lower()          # ⛔ la mauvaise cause
     assert "HTTPStatusError" not in message         # ⛔ le nom de la classe au lieu du motif
 
 
@@ -146,7 +146,7 @@ def test_a_refusal_on_music_is_not_reported_as_a_network_failure_either(monkeypa
 
     with pytest.raises(GenerationError) as exc:
         elevenlabs.generate_music(prompt="x" * 10, api_key="sk-test")
-    assert "prompt too long" in str(exc.value) and "réseau" not in str(exc.value).lower()
+    assert "prompt too long" in str(exc.value) and "network" not in str(exc.value).lower()
 
 
 def test_a_real_transport_failure_is_still_called_a_network_error(monkeypatch):
@@ -157,7 +157,7 @@ def test_a_real_transport_failure_is_still_called_a_network_error(monkeypatch):
     monkeypatch.setattr(elevenlabs.httpx, "Client", _Boom(_response(200)))
     with pytest.raises(GenerationError) as exc:
         elevenlabs.generate_voice(text="Bonjour", api_key="sk-test")
-    assert "réseau" in str(exc.value)
+    assert "network" in str(exc.value)
 
 
 def test_music_does_not_forward_empty_parameters(monkeypatch):

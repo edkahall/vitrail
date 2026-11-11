@@ -549,7 +549,8 @@
     "enc_decision_admin_only": "Acima do limite, apenas um administrador da organização pode iniciar a codificação.",
     "enc_decision_delete_hint": "Nada começa até que escolha. Também pode eliminar este conteúdo.",
     "enc_decision_failed": "Não foi possível guardar a decisão.",
-    "enc_downloading": "A obter o ficheiro"
+    "enc_downloading": "A obter o ficheiro",
+    "system_folder_advertisers": "Anunciantes"
   },
   "iam": {
     "title": "Usuários e Papéis",

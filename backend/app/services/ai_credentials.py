@@ -148,10 +148,10 @@ async def validate_provider_key(provider: str, api_key: str) -> tuple[bool | Non
             return (r.status_code == 200, f"HTTP {r.status_code}")
         if provider == "fal":
             # Pas d'endpoint whoami stable → validée à la 1ʳᵉ génération (sprint génération).
-            return (None, "validee a la premiere generation")
+            return (None, "validated on first generation")
     except httpx.HTTPError as exc:
-        return (False, f"erreur reseau: {exc.__class__.__name__}")
-    return (None, "provider inconnu")
+        return (False, f"network error: {exc.__class__.__name__}")
+    return (None, "unknown provider")
 
 
 def sdk_model_name(model: str) -> str:

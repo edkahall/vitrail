@@ -31,19 +31,19 @@ TZ = ZoneInfo("Europe/Paris")
 def test_build_message_campaign_events() -> None:
     subj, body = build_message("campaign_started", {
         "campaign_name": "Été Brightwell", "advertiser_name": "Brightwell",
-        "sov_percent": 20.0, "starts_on": "2026-07-01", "ends_on": "2026-07-31"})
+        "sov_percent": 20.0, "starts_on": "2026-07-01", "ends_on": "2026-07-31"}, locale="fr")
     assert "Été Brightwell" in subj and "Brightwell" in body and "20.0 %" in body
 
     subj, body = build_message("campaign_ended", {
         "campaign_name": "Été Brightwell", "advertiser_name": "Brightwell",
         "starts_on": "2026-07-01", "ends_on": "2026-07-31",
-        "plays": 232, "signed_plays": 232, "sov_served_pct": 19.8})
+        "plays": 232, "signed_plays": 232, "sov_served_pct": 19.8}, locale="fr")
     assert "terminée" in subj and "232 passages" in body and "19.8 %" in body
 
     subj, body = build_message("campaign_underserved", {
         "campaign_name": "Été Brightwell", "advertiser_name": "Brightwell",
         "sov_percent": 20.0, "sov_served_pct": 4.8, "threshold_pct": 80.0,
-        "period_from": "2026-07-01", "period_until": "2026-07-08"})
+        "period_from": "2026-07-01", "period_until": "2026-07-08"}, locale="fr")
     assert "sous-servie" in subj and "4.8 %" in body and "20.0 % vendus" in body
 
 

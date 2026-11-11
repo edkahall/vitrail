@@ -105,24 +105,24 @@ def renderer_zip_members(data: bytes) -> list[tuple[str, bytes]]:
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as exc:
-        raise BundleImportError("Zip de renderer illisible.") from exc
+        raise BundleImportError("Unreadable renderer zip.") from exc
     out: list[tuple[str, bytes]] = []
     total = 0
     with zf:
         infos = [i for i in zf.infolist() if not i.is_dir()]
         if not infos:
-            raise BundleImportError("Zip de renderer vide.")
+            raise BundleImportError("Empty renderer zip.")
         if len(infos) > _RENDERER_MAX_FILES:
-            raise BundleImportError(f"Zip de renderer : trop de fichiers (max {_RENDERER_MAX_FILES}).")
+            raise BundleImportError(f"Renderer zip: too many files (max {_RENDERER_MAX_FILES}).")
         for info in infos:
             name = info.filename
             if name == _RENDERER_MANIFEST:
                 continue   # le manifeste décrit le colis, il n'est pas servi
             if not _RENDERER_PATH_RE.match(name) or ".." in name.split("/"):
-                raise BundleImportError(f"Zip de renderer : chemin de fichier refusé ({name!r}).")
+                raise BundleImportError(f"Renderer zip: file path rejected ({name!r}).")
             total += info.file_size
             if total > _RENDERER_MAX_UNCOMPRESSED:
-                raise BundleImportError("Zip de renderer : contenu décompressé trop volumineux.")
+                raise BundleImportError("Renderer zip: uncompressed content too large.")
             out.append((name, zf.read(info)))
     return out
 
@@ -199,20 +199,20 @@ async def fetch_bundle(url: str) -> bytes:
     redirections (un 3xx pourrait pointer vers une IP interne = contournement SSRF). Lève ValueError
     avec un motif clair (l'endpoint le remonte en 400)."""
     if not url_is_safe(url, schemes=("http", "https")):
-        raise ValueError("URL non autorisée (schéma ou hôte).")
+        raise ValueError("URL not allowed (scheme or host).")
     try:
         async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
             async with client.stream("GET", url) as resp:
                 if resp.status_code >= 400:
-                    raise ValueError(f"Téléchargement HTTP {resp.status_code}.")
+                    raise ValueError(f"Download failed: HTTP {resp.status_code}.")
                 buf = bytearray()
                 async for chunk in resp.aiter_bytes():
                     buf.extend(chunk)
                     if len(buf) > _MAX_BUNDLE_BYTES:
-                        raise ValueError("Archive trop volumineuse (max 256 Mio).")
+                        raise ValueError("Archive too large (max 256 MiB).")
                 return bytes(buf)
     except httpx.HTTPError as exc:
-        raise ValueError(f"Téléchargement échoué : {exc}") from exc
+        raise ValueError(f"Download failed: {exc}") from exc
 
 
 async def import_bundle(
@@ -234,9 +234,9 @@ async def import_bundle(
     indétectable, type d'artefact incohérent avec la plateforme).
     """
     if not data:
-        raise BundleImportError("Contenu vide.")
+        raise BundleImportError("Empty content.")
     if len(data) > _MAX_BUNDLE_BYTES:
-        raise BundleImportError("Archive trop volumineuse (max 256 Mio).")
+        raise BundleImportError("Archive too large (max 256 MiB).")
 
     # Plateforme : param explicite > nom de fichier > manifeste `renderer.json` (zip renderer).
     name_platform, name_version = parse_bundle_filename(filename)
@@ -247,17 +247,17 @@ async def import_bundle(
     is_renderer = plat in RENDERER_PLATFORMS
     if plat not in ota.BUNDLE_PLATFORMS and not is_renderer:
         raise BundleImportError(
-            "Plateforme inconnue ou indétectable (linux/rpi/windows/android/chromeos/brightsign)."
+            "Unknown or undetectable platform (linux/rpi/windows/android/chromeos/brightsign)."
         )
     ext, mime = BUNDLE_ARTIFACT[plat]
 
     # Type d'artefact cohérent avec la plateforme (magie) — évite d'importer un .apk en « linux ».
     if ext == ".tar.gz" and not data.startswith(_GZIP_MAGIC):
-        raise BundleImportError("Attendu une archive .tar.gz (gzip) pour cette plateforme.")
+        raise BundleImportError("Expected a .tar.gz (gzip) archive for this platform.")
     if ext == ".apk" and not data.startswith(_ZIP_MAGIC):
-        raise BundleImportError("Attendu un .apk (zip) pour Android.")
+        raise BundleImportError("Expected an .apk (zip) for Android.")
     if ext == ".zip" and not data.startswith(_ZIP_MAGIC):
-        raise BundleImportError("Attendu un zip de renderer pour cette plateforme.")
+        raise BundleImportError("Expected a renderer zip for this platform.")
 
     # Version : param explicite > contenu de l'archive > nom de fichier.
     ver = (version
@@ -265,7 +265,7 @@ async def import_bundle(
            or zip_version or name_version)
     ver = (ver or "").strip()
     if not _SEMVER_RE.match(ver):
-        raise BundleImportError("Version indétectable (attendu MAJEUR.MINEUR.CORRECTIF).")
+        raise BundleImportError("Undetectable version (expected MAJOR.MINOR.PATCH).")
 
     # Renderer : valider le zip DÈS l'aperçu (un chemin hostile ou un zip démesuré doit refuser
     # le dry_run, pas l'écriture qui suivra la confirmation de l'opérateur).

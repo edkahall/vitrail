@@ -26,16 +26,17 @@ from app.schemas.notifications import (
     RuleUpdate,
 )
 from app.services import notifications
+from app.services.doc_i18n import norm_locale
 from app.services.webhook_signature import new_secret
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 @router.get("/event-types")
-async def event_types(_: Annotated[CmsUser, Depends(require_org_admin)]) -> dict:
-    """Types d'événements alertables (whitelist)."""
-    return {"event_types": [{"key": k, "label": v} for k, v in notifications.EVENT_TYPES.items()
-                            if k != "test"]}
+async def event_types(u: Annotated[CmsUser, Depends(require_org_admin)]) -> dict:
+    """Types d'événements alertables (whitelist), libellés dans la langue du demandeur."""
+    return {"event_types": [{"key": k, "label": notifications.event_type_label(k, u.locale)}
+                            for k in notifications.EVENT_TYPES if k != "test"]}
 
 
 # ── Canaux ─────────────────────────────────────────────────────────────────────────
@@ -68,7 +69,7 @@ def _validated_config(
         url = config.get("url", "")
         if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="URL webhook invalide.")
+                                detail="Invalid webhook URL.")
         # 🔴 SSRF (audit menu ⑬, 2026-07-31) : seul le SCHÉMA était vérifié. Le serveur
         # acceptait donc de POSTer vers la boucle locale, le réseau privé du client ou
         # l'adresse de métadonnées d'un cloud — et le **code HTTP est renvoyé à
@@ -80,7 +81,7 @@ def _validated_config(
         if not url_is_safe(url, schemes=("http", "https")):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="URL webhook refusée : adresse interne, privée ou non résolvable.")
+                detail="Webhook URL rejected: internal, private or unresolvable address.")
         # Secret de signature (P1.7) : conservé s'il existe, créé sinon — les canaux
         # antérieurs en reçoivent donc un à leur première modification, sans geste. On ne
         # le laisse jamais choisir par l'appelant : un secret fourni depuis l'extérieur
@@ -94,13 +95,30 @@ def _validated_config(
         recipients = [r.strip() for r in raw if isinstance(r, str) and r.strip()]
         if not recipients or any("@" not in r or " " in r for r in recipients):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="Destinataires email invalides.")
+                                detail="Invalid email recipients.")
         if len(recipients) > 20:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                detail="20 destinataires maximum par canal.")
+                                detail="20 recipients maximum per channel.")
         return {"recipients": recipients}
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Types de canal supportés : webhook, email.")
+                        detail="Supported channel types: webhook, email.")
+
+
+def _with_locale(clean: dict, sent: dict | None, fallback: str | None) -> dict:
+    """Pose `locale` (langue des messages du canal) dans la config nettoyée.
+
+    `_validated_config` reconstruit le dictionnaire sans cette clé : on la remet ici.
+    Langue envoyée explicitement par le client → elle ; sinon `fallback` (création = langue
+    du profil du créateur ; mise à jour = langue déjà portée par le canal, si elle existe —
+    un canal antérieur sans langue reste en anglais). Ce n'est pas un secret : elle est
+    rendue telle quelle par l'API.
+    """
+    sent = sent or {}
+    if sent.get("locale"):
+        clean["locale"] = norm_locale(sent["locale"])
+    elif fallback:
+        clean["locale"] = norm_locale(fallback)
+    return clean
 
 
 def _notif_audit(
@@ -125,7 +143,9 @@ async def channel_create(
     u: Annotated[CmsUser, Depends(require_org_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CmsNotificationChannel:
-    config = _validated_config(body.channel_type, body.config)
+    # Langue des messages du canal = celle du profil de son créateur (sauf choix explicite).
+    config = _with_locale(_validated_config(body.channel_type, body.config), body.config,
+                          u.locale)
     row = CmsNotificationChannel(
         id_org=u.id_org,
         name=(body.name or ("Email" if body.channel_type == "email" else "Webhook"))[:80],
@@ -145,7 +165,7 @@ async def _channel_or_404(db: AsyncSession, id_channel: int, id_org: int) -> Cms
                                              CmsNotificationChannel.id_org == id_org)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Canal introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Channel not found.")
     return row
 
 
@@ -161,7 +181,8 @@ async def channel_update(
     rotated = False
     if body.config is not None:
         previous = row.config or {}
-        row.config = _validated_config(row.channel_type, body.config, previous)
+        row.config = _with_locale(_validated_config(row.channel_type, body.config, previous),
+                                  body.config, previous.get("locale"))
         rotated = bool(row.config.get("secret")) and row.config.get("secret") != previous.get(
             "secret")
     if body.enabled is not None:
@@ -202,7 +223,8 @@ async def channel_test(
 ) -> dict:
     """Envoie un message de test au canal (webhook ou email) + journalise le résultat."""
     row = await _channel_or_404(db, id_channel, u.id_org)
-    subject, body = notifications.build_message("test", {})
+    subject, body = notifications.build_message(
+        "test", {}, locale=notifications.channel_locale(row.config))
     ok, detail = await run_in_threadpool(
         notifications.deliver_to_channel, row.channel_type, row.config, "test",
         subject, body, {})
@@ -231,7 +253,7 @@ async def rule_create(
 ) -> CmsAlertRule:
     if body.event_type not in notifications.EVENT_TYPES or body.event_type == "test":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Type d'événement invalide.")
+                            detail="Invalid event type.")
     await _channel_or_404(db, body.id_channel, u.id_org)   # garde org
     row = CmsAlertRule(id_org=u.id_org, event_type=body.event_type, id_channel=body.id_channel,
                        params=body.params or {}, enabled=body.enabled)
@@ -254,7 +276,7 @@ async def rule_update(
         select(CmsAlertRule).where(CmsAlertRule.id_rule == id_rule, CmsAlertRule.id_org == u.id_org)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Règle introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
     if body.enabled is not None:
         row.enabled = body.enabled
     if body.id_channel is not None:
@@ -278,7 +300,7 @@ async def rule_delete(
         select(CmsAlertRule).where(CmsAlertRule.id_rule == id_rule, CmsAlertRule.id_org == u.id_org)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Règle introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found.")
     db.add(_notif_audit(u, "delete", "alert_rule", str(id_rule),
                         {"event_type": row.event_type}))
     await db.delete(row)

@@ -123,7 +123,7 @@ def _render_poster_png(id_org: int, p: dict) -> tuple[bytes, int, int, str]:
 
     verdict = conformity.validate(template_id, fmt, inputs)
     if not verdict["valid"]:
-        raise PromoError("conformité: " + "; ".join(e["message"] for e in verdict["errors"]))
+        raise PromoError("conformity: " + "; ".join(e["message"] for e in verdict["errors"]))
 
     s3 = _s3()
     conn = _db_conn()
@@ -215,7 +215,7 @@ def render_promo_image(id_job: int) -> dict:
         return _fail(id_job, str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.exception("render_promo_image %s: rendu échoué", id_job)
-        return _fail(id_job, f"rendu échoué: {exc.__class__.__name__}")
+        return _fail(id_job, f"render failed: {exc.__class__.__name__}")
 
     name = ((p.get("name") or "").strip() or f"Promo {label}")[:120]
     storage_key = make_storage_key(id_org, f"{name}.png")
@@ -223,7 +223,7 @@ def render_promo_image(id_job: int) -> dict:
         _s3().put_object(Bucket=settings.MINIO_BUCKET_MEDIA, Key=storage_key,
                          Body=png, ContentType="image/png")
     except Exception as exc:  # noqa: BLE001
-        return _fail(id_job, f"upload échoué: {exc.__class__.__name__}")
+        return _fail(id_job, f"upload failed: {exc.__class__.__name__}")
 
     meta = {"promo": {"template_id": p.get("template_id"), "format": p.get("format"),
                       "resolution": p.get("resolution"), "width": width, "height": height,
@@ -254,14 +254,14 @@ def render_promo_video(id_job: int) -> dict:
         return _fail(id_job, str(exc))
     except Exception as exc:  # noqa: BLE001
         logger.exception("render_promo_video %s: rendu affiche échoué", id_job)
-        return _fail(id_job, f"rendu échoué: {exc.__class__.__name__}")
+        return _fail(id_job, f"render failed: {exc.__class__.__name__}")
 
     tmp_key = f"promo-video-tmp/{id_org}/{id_job}.png"
     try:
         _s3().put_object(Bucket=settings.MINIO_BUCKET_MEDIA, Key=tmp_key,
                          Body=png, ContentType="image/png")
     except Exception as exc:  # noqa: BLE001
-        return _fail(id_job, f"upload poster échoué: {exc.__class__.__name__}")
+        return _fail(id_job, f"poster upload failed: {exc.__class__.__name__}")
 
     # Étape 2 sur la file 'media' (ffmpeg). Le job reste 'processing' d'ici là.
     animate_promo_video.delay(id_job, tmp_key, width, height)
@@ -332,13 +332,13 @@ def animate_promo_video(id_job: int, tmp_key: str, width: int, height: int) -> d
         if res.returncode != 0 or not os.path.exists(out_mp4):
             logger.error("animate_promo_video %s ffmpeg: %s", id_job, res.stderr[-500:])
             _cleanup_tmp()
-            return _fail(id_job, "animation vidéo échouée (ffmpeg)")
+            return _fail(id_job, "video animation failed (ffmpeg)")
         with open(out_mp4, "rb") as f:
             mp4 = f.read()
     except Exception as exc:  # noqa: BLE001
         logger.exception("animate_promo_video %s", id_job)
         _cleanup_tmp()
-        return _fail(id_job, f"animation échouée: {exc.__class__.__name__}")
+        return _fail(id_job, f"animation failed: {exc.__class__.__name__}")
     finally:
         for fp in (in_png, out_mp4):
             try:
@@ -350,14 +350,14 @@ def animate_promo_video(id_job: int, tmp_key: str, width: int, height: int) -> d
         except OSError:
             pass
 
-    name = ((p.get("name") or "").strip() or "Promo vidéo")[:120]
+    name = ((p.get("name") or "").strip() or "Promo video")[:120]
     storage_key = make_storage_key(id_org, f"{name}.mp4")
     try:
         s3.put_object(Bucket=settings.MINIO_BUCKET_MEDIA, Key=storage_key,
                       Body=mp4, ContentType="video/mp4")
     except Exception as exc:  # noqa: BLE001
         _cleanup_tmp()
-        return _fail(id_job, f"upload vidéo échoué: {exc.__class__.__name__}")
+        return _fail(id_job, f"video upload failed: {exc.__class__.__name__}")
 
     meta = {"promo": {"template_id": p.get("template_id"), "format": p.get("format"),
                       "resolution": p.get("resolution"), "kind": "video",

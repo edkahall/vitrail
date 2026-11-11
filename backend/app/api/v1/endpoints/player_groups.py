@@ -36,7 +36,7 @@ async def _get_group_or_404(id_group: int, db: AsyncSession) -> CmsPlayerGroup:
         await db.execute(select(CmsPlayerGroup).where(CmsPlayerGroup.id_group == id_group))
     ).scalar_one_or_none()
     if group is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Groupe introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group
 
 
@@ -187,7 +187,7 @@ async def add_player_to_group(
         await db.execute(select(CmsPlayer).where(CmsPlayer.id_player == body.id_player))
     ).scalar_one_or_none()
     if player is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
 
     # Idempotent — ignore if already member
     existing = (
@@ -219,6 +219,6 @@ async def remove_player_from_group(
         )
     ).scalar_one_or_none()
     if member is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membre introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
     await db.delete(member)
     await db.commit()

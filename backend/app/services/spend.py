@@ -62,9 +62,9 @@ class SpendCapExceeded(Exception):
         self.spent_usd = spent_usd
         self.estimated_usd = estimated_usd
         super().__init__(
-            f"Plafond de dépense {scope} atteint : {spent_usd:.2f} $ dépensés sur "
-            f"{cap_usd:.2f} $ ({period}), cette génération en coûterait "
-            f"{estimated_usd:.2f} $ de plus."
+            f"{scope} spending cap reached: ${spent_usd:.2f} spent out of "
+            f"${cap_usd:.2f} ({period}), this generation would cost "
+            f"${estimated_usd:.2f} more."
         )
 
     def as_detail(self) -> dict:

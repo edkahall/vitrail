@@ -23,6 +23,8 @@ from psycopg2.extras import Json
 
 from app.core.config import settings
 from app.services import pop_archive
+from app.services.doc_i18n import tr
+from app.services.pop_report import DOC_TEXTS as POP_TEXTS
 from app.services.pop_report import build_pop_report_pdf
 from app.workers.celery_app import celery_app
 
@@ -220,7 +222,8 @@ def _archive_day(conn, partition_regclass: str, day: date) -> dict:
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             "total_plays": len(rows),
             "merkle_root": global_root,
-            "scope_label": "Archive Proof of Play (journalière)",
+            # Aucun utilisateur derrière l'archive journalière → langue par défaut (anglais).
+            "scope_label": tr(POP_TEXTS, None, "scope_daily_archive"),
             "players": players_report,
         }
         pdf_key = f"{prefix}/{id_org}/{day.isoformat()}.pdf"

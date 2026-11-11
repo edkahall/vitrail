@@ -174,9 +174,9 @@ class BulkTargetSpec(BaseModel):
     @model_validator(mode="after")
     def _check(self) -> "BulkTargetSpec":
         if self.target_type in ("site", "site_group", "group", "player") and self.target_id is None:
-            raise ValueError(f"target_id requis pour target_type={self.target_type}")
+            raise ValueError(f"target_id required for target_type={self.target_type}")
         if self.target_type == "tags" and not self.tag_expr:
-            raise ValueError("tag_expr requis pour target_type=tags")
+            raise ValueError("tag_expr required for target_type=tags")
         return self
 
 
@@ -200,7 +200,7 @@ class PlayerBulkCommandRequest(BaseModel):
     @model_validator(mode="after")
     def _check_targets(self) -> "PlayerBulkCommandRequest":
         if not self.targets:
-            raise ValueError("Au moins une cible est requise.")
+            raise ValueError("At least one target is required.")
         return self
 
 

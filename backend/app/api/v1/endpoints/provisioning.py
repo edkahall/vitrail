@@ -75,7 +75,7 @@ async def create_provisioning_token(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ProvisioningTokenRead:
     if current_user.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organisation non autorisée")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization not allowed")
 
     raw_token = f"sfp_{secrets.token_urlsafe(32)}"
     key = CmsApiKey(
@@ -114,7 +114,7 @@ async def create_provisioning_payload(
     image USB/SD, ZIP BrightSign). `id_player` → ré-attache à un player existant (anti-doublon).
     Auth = JWT org-admin **ou** clé opérateur `sfk_` (§XXIX, longue durée)."""
     if actor.id_org != id_org:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organisation non autorisée")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization not allowed")
 
     target_id = body.id_player
     if target_id is not None:
@@ -124,7 +124,7 @@ async def create_provisioning_payload(
                 CmsPlayer.id_player == target_id, CmsPlayer.id_org == id_org)
         )).scalar_one_or_none()
         if target is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Player cible introuvable")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Target player not found")
     else:
         # Création : on PRÉ-CRÉE le player (offline) et on lie le token dessus → le device s'y
         # ré-attache toujours (verify online déterministe + zéro doublon, quelle que soit la
@@ -178,7 +178,7 @@ async def create_provisioning_batch(
     Le frontend aplatit le résultat en `signflow-config.json` v2. Auth = JWT org-admin **ou** clé
     opérateur `sfk_`."""
     if actor.id_org != id_org:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organisation non autorisée")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization not allowed")
 
     backend_url = (body.backend_url or str(request.base_url)).rstrip("/")
     now = datetime.now(timezone.utc)
@@ -187,9 +187,9 @@ async def create_provisioning_batch(
     if body.mode == "per_machine":
         if not body.entries:
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                                "Au moins une machine (entries) est requise en mode per_machine.")
+                                "At least one machine (entries) is required in per_machine mode.")
         if len(body.entries) > 500:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Lot trop grand (max 500 machines).")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Batch too large (max 500 machines).")
         players: list[ProvisioningPayload] = []
         for entry in body.entries:
             # PRÉ-CRÉE le player (offline) + lie le token dessus → ré-attache déterministe, zéro doublon.
@@ -218,7 +218,7 @@ async def create_provisioning_batch(
     # mode shared : un seul token à usage multiple, players créés à l'enregistrement.
     if not body.ref or not body.count:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "ref et count sont requis en mode shared.")
+                            "ref and count are required in shared mode.")
     raw_token = f"sfp_{secrets.token_urlsafe(32)}"
     key = CmsApiKey(
         id_org=id_org, id_user=actor.id_user,
@@ -262,7 +262,7 @@ async def provisioning_player_status(
         )
     ).scalar_one_or_none()
     if player is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Player introuvable")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Player not found")
     return ProvisioningPlayerStatus(
         id_player=player.id_player, player_name=player.player_name, status=player.status)
 
@@ -283,7 +283,7 @@ async def create_provisioning_key(
     """Génère une **clé opérateur** `sfk_` (longue durée, révocable) pour l'installeur terrain :
     l'outil crée des payloads + lit l'état des players sans JWT org-admin à re-copier (§XXIX)."""
     if current_user.id_org != id_org:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organisation non autorisée")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization not allowed")
     raw_token = f"sfk_{secrets.token_urlsafe(32)}"
     now = datetime.now(timezone.utc)
     key = CmsApiKey(
@@ -315,7 +315,7 @@ async def list_provisioning_keys(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[ProvisioningKeyRead]:
     if current_user.id_org != id_org:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organisation non autorisée")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization not allowed")
     rows = (
         await db.execute(
             select(CmsApiKey).where(CmsApiKey.id_org == id_org).order_by(CmsApiKey.created_at.desc())
@@ -338,7 +338,7 @@ async def revoke_provisioning_key(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     if current_user.id_org != id_org:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organisation non autorisée")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization not allowed")
     key = await _get_operator_key_or_404(id_org, id_key, db)
     key.is_active = False
     db.add(CmsAuditLog(
@@ -359,7 +359,7 @@ async def delete_provisioning_key(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     if current_user.id_org != id_org:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organisation non autorisée")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Organization not allowed")
     key = await _get_operator_key_or_404(id_org, id_key, db)
     db.add(CmsAuditLog(
         id_org=id_org, id_user=current_user.id_user, action="delete",
@@ -376,7 +376,7 @@ async def _get_operator_key_or_404(id_org: int, id_key: int, db: AsyncSession) -
         )
     ).scalar_one_or_none()
     if key is None or PROVISIONING_OPERATOR_SCOPE not in (key.scopes or []):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Clé introuvable")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Key not found")
     return key
 
 
@@ -387,7 +387,7 @@ async def list_provisioning_tokens(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[ProvisioningTokenRead]:
     if current_user.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organisation non autorisée")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization not allowed")
 
     rows = (
         await db.execute(
@@ -414,7 +414,7 @@ async def _get_token_or_404(id_org: int, id_key: int, db: AsyncSession) -> CmsAp
         )
     ).scalar_one_or_none()
     if key is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found")
     return key
 
 
@@ -429,7 +429,7 @@ async def revoke_provisioning_token(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     if current_user.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organisation non autorisée")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization not allowed")
     key = await _get_token_or_404(id_org, id_key, db)
     db.add(CmsAuditLog(
         id_org=id_org,
@@ -454,7 +454,7 @@ async def delete_provisioning_token(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     if current_user.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organisation non autorisée")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Organization not allowed")
     key = await _get_token_or_404(id_org, id_key, db)
     db.add(CmsAuditLog(
         id_org=id_org,
@@ -490,14 +490,14 @@ async def register_player(
     if key is None or _PROV_SCOPE not in (key.scopes or []):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token d'enregistrement invalide",
+            detail="Invalid registration token",
         )
 
     now = datetime.now(timezone.utc)
     if key.expires_at and key.expires_at < now:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token d'enregistrement expiré",
+            detail="Registration token expired",
         )
 
     # Ré-attache EXPLICITE (installeur terrain §XXIX) : le provisioning token vise un player
@@ -565,7 +565,7 @@ async def register_player(
     if key.max_uses is not None and (key.use_count or 0) >= key.max_uses:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Token d'enregistrement épuisé (max_uses atteint)",
+            detail="Registration token used up (max_uses reached)",
         )
 
     player = CmsPlayer(

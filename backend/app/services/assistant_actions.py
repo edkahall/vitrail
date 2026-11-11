@@ -90,18 +90,18 @@ ACTION_PERMISSIONS: dict[str, tuple[str, str]] = {
 
 # Commandes players : action_type → (commande Redis, libellé, avertissement éventuel).
 _COMMAND_META: dict[str, dict] = {
-    "restart_player_app": {"cmd": "restart", "verb": "Redémarrer l'application",
-                           "warn": "L'application se recharge (bref écran noir)."},
-    "reboot_player": {"cmd": "reboot_os", "verb": "Redémarrer la machine (reboot OS)",
-                      "warn": "Reboot matériel : les écrans seront indisponibles ~1–2 min."},
-    "force_resync": {"cmd": "force_sync", "verb": "Forcer la resynchronisation du contenu",
+    "restart_player_app": {"cmd": "restart", "verb": "Restart the application",
+                           "warn": "The application reloads (brief black screen)."},
+    "reboot_player": {"cmd": "reboot_os", "verb": "Restart the device (OS reboot)",
+                      "warn": "Hardware reboot: screens will be unavailable for ~1–2 min."},
+    "force_resync": {"cmd": "force_sync", "verb": "Force a content resync",
                      "warn": None},
-    "player_screenshot": {"cmd": "screenshot", "verb": "Capturer une capture d'écran",
+    "player_screenshot": {"cmd": "screenshot", "verb": "Take a screenshot",
                           "warn": None},
     "toggle_overlay": {"cmd": "toggle_overlay",
-                       "verb": "Afficher/masquer les infos diagnostic à l'écran", "warn": None},
-    "set_maintenance": {"cmd": "maintenance", "verb": "Afficher l'écran de maintenance",
-                        "warn": "Le contenu reprendra à la prochaine resynchronisation."},
+                       "verb": "Show/hide the on-screen diagnostic info", "warn": None},
+    "set_maintenance": {"cmd": "maintenance", "verb": "Show the maintenance screen",
+                        "warn": "Content will resume at the next resync."},
 }
 PLAYER_COMMANDS = {a: m["cmd"] for a, m in _COMMAND_META.items()}
 
@@ -255,10 +255,10 @@ async def _resolve_playlist(db: AsyncSession, id_org: int, name: str):
         await db.execute(base.where(CmsPlaylist.playlist_name.ilike(f"%{name}%")))
     ).scalars().all()
     if not matches:
-        return None, {"error": f"Aucune playlist nommée « {name} »."}
+        return None, {"error": f"No playlist named \"{name}\"."}
     if len(matches) > 1:
         return None, {
-            "error": f"Plusieurs playlists correspondent à « {name} »",
+            "error": f"Several playlists match \"{name}\"",
             "candidates": [m.playlist_name for m in matches[:8]],
         }
     return matches[0], None
@@ -278,10 +278,10 @@ async def _resolve_media(db: AsyncSession, id_org: int, name: str):
         await db.execute(base.where(CmsMedia.media_name.ilike(f"%{name}%")))
     ).scalars().all()
     if not matches:
-        return None, {"error": f"Aucun média nommé « {name} »."}
+        return None, {"error": f"No media named \"{name}\"."}
     if len(matches) > 1:
         return None, {
-            "error": f"Plusieurs médias correspondent à « {name} »",
+            "error": f"Several media items match \"{name}\"",
             "candidates": [m.media_name for m in matches[:8]],
         }
     return matches[0], None
@@ -297,8 +297,8 @@ async def resolve_add_playlist_item(db: AsyncSession, id_org: int, params: dict)
     if err:
         return err
     if media.media_type == "audio":
-        return {"error": f"« {media.media_name} » est un média audio — réservé aux paniers audio, "
-                         "pas aux playlists standard."}
+        return {"error": f"\"{media.media_name}\" is an audio file — for audio baskets only, "
+                         "not standard playlists."}
 
     zone_human = int(params.get("zone") or 1)          # UI = 1-based
     zone_index = max(0, zone_human - 1)
@@ -308,7 +308,7 @@ async def resolve_add_playlist_item(db: AsyncSession, id_org: int, params: dict)
 
     warnings = []
     if pl.draft_items is not None:
-        warnings.append("Un brouillon non publié de cette playlist sera publié en même temps.")
+        warnings.append("An unpublished draft of this playlist will be published at the same time.")
 
     return {
         "action_type": "add_playlist_item",
@@ -319,8 +319,8 @@ async def resolve_add_playlist_item(db: AsyncSession, id_org: int, params: dict)
             "duration_ms": duration_ms,
         },
         "description": (
-            f"Ajouter « {media.media_name} » à la playlist « {pl.playlist_name} » "
-            f"en zone {zone_human}, validité permanente."
+            f"Add \"{media.media_name}\" to playlist \"{pl.playlist_name}\" "
+            f"in zone {zone_human}, always valid."
         ),
         "warnings": warnings,
     }
@@ -341,14 +341,14 @@ async def resolve_remove_playlist_item(db: AsyncSession, id_org: int, params: di
         )
     )).scalar_one()
     if count == 0:
-        return {"error": f"« {media.media_name} » n'est pas dans la playlist "
-                         f"« {pl.playlist_name} »."}
+        return {"error": f"\"{media.media_name}\" is not in playlist "
+                         f"\"{pl.playlist_name}\"."}
 
     return {
         "action_type": "remove_playlist_item",
         "params": {"id_playlist": pl.id_playlist, "id_media": media.id_media},
         "description": (
-            f"Retirer « {media.media_name} » de la playlist « {pl.playlist_name} » "
+            f"Remove \"{media.media_name}\" from playlist \"{pl.playlist_name}\" "
             f"({count} occurrence{'s' if count > 1 else ''})."
         ),
         "warnings": [],
@@ -365,9 +365,9 @@ async def _resolve_basket(db: AsyncSession, id_org: int, name: str):
         await db.execute(base.where(CmsAudioBasket.basket_name.ilike(f"%{name}%")))
     ).scalars().all()
     if not matches:
-        return None, {"error": f"Aucun panier audio nommé « {name} »."}
+        return None, {"error": f"No audio basket named \"{name}\"."}
     if len(matches) > 1:
-        return None, {"error": f"Plusieurs paniers correspondent à « {name} »",
+        return None, {"error": f"Several baskets match \"{name}\"",
                       "candidates": [m.basket_name for m in matches[:8]]}
     return matches[0], None
 
@@ -375,7 +375,7 @@ async def _resolve_basket(db: AsyncSession, id_org: int, name: str):
 async def resolve_create_playlist(db: AsyncSession, id_org: int, params: dict) -> dict:
     name = str(params.get("name", "")).strip()
     if not name:
-        return {"error": "Donnez un nom de playlist."}
+        return {"error": "Give a playlist name."}
     exists = (await db.execute(
         select(CmsPlaylist).where(
             CmsPlaylist.id_org == id_org,
@@ -383,11 +383,11 @@ async def resolve_create_playlist(db: AsyncSession, id_org: int, params: dict) -
             CmsPlaylist.is_deleted == False,  # noqa: E712
         )
     )).scalars().first()
-    warnings = ["Une playlist porte déjà ce nom (une seconde sera créée)."] if exists else []
+    warnings = ["A playlist with this name already exists (a second one will be created)."] if exists else []
     return {
         "action_type": "create_playlist",
         "params": {"name": name},
-        "description": f"Créer la playlist « {name} ».",
+        "description": f"Create playlist \"{name}\".",
         "warnings": warnings,
     }
 
@@ -401,7 +401,7 @@ async def resolve_add_tagged_content_to_playlist(
         return err
     tag = str(params.get("tag", "")).strip()
     if not tag:
-        return {"error": "Précisez le tag des contenus à ajouter."}
+        return {"error": "Specify the tag of the content to add."}
 
     # Médias (visuels, non audio) portant un tag dont la valeur correspond.
     rows = (await db.execute(
@@ -416,15 +416,15 @@ async def resolve_add_tagged_content_to_playlist(
         ).distinct()
     )).all()
     if not rows:
-        return {"error": f"Aucun contenu visuel tagué « {tag} »."}
+        return {"error": f"No visual content tagged \"{tag}\"."}
     ids = [r.id_media for r in rows]
     names = [r.media_name for r in rows]
     return {
         "action_type": "add_tagged_content_to_playlist",
         "params": {"id_playlist": pl.id_playlist, "id_medias": ids},
         "description": (
-            f"Ajouter {len(ids)} contenu(s) tagué(s) « {tag} » à la playlist "
-            f"« {pl.playlist_name} » : {', '.join(names[:5])}"
+            f"Add {len(ids)} item(s) tagged \"{tag}\" to playlist "
+            f"\"{pl.playlist_name}\": {', '.join(names[:5])}"
             f"{'…' if len(names) > 5 else ''}."
         ),
         "warnings": [],
@@ -442,16 +442,16 @@ async def resolve_create_feed(db: AsyncSession, id_org: int, params: dict) -> di
         url = url or entry["url"]
         name = name or entry["name"]
     if not url:
-        return {"error": "Source inconnue du catalogue. Donnez l'URL RSS exacte du flux."}
+        return {"error": "Source not in the catalog. Give the exact RSS URL of the feed."}
     if not (url.startswith("http://") or url.startswith("https://")):
-        return {"error": "L'URL du flux doit commencer par http:// ou https://."}
-    name = name or (source or "Flux RSS")
+        return {"error": "The feed URL must start with http:// or https://."}
+    name = name or (source or "RSS feed")
     mode = str(params.get("display_mode") or "ticker")
 
     return {
         "action_type": "create_feed",
         "params": {"feed_name": name, "url": url, "display_mode": mode},
-        "description": f"Créer le feed « {name} » (RSS : {url}), affichage « {mode} ».",
+        "description": f"Create feed \"{name}\" (RSS: {url}), display \"{mode}\".",
         "warnings": [],
     }
 
@@ -464,12 +464,12 @@ async def resolve_add_audio_track(db: AsyncSession, id_org: int, params: dict) -
     if err:
         return err
     if media.media_type != "audio":
-        return {"error": f"« {media.media_name} » n'est pas un média audio."}
+        return {"error": f"\"{media.media_name}\" is not an audio file."}
     return {
         "action_type": "add_audio_track",
         "params": {"id_basket": basket.id_basket, "id_media": media.id_media},
-        "description": f"Ajouter la piste « {media.media_name} » au panier audio "
-                       f"« {basket.basket_name} ».",
+        "description": f"Add track \"{media.media_name}\" to audio basket "
+                       f"\"{basket.basket_name}\".",
         "warnings": [],
     }
 
@@ -489,13 +489,13 @@ async def resolve_remove_audio_track(db: AsyncSession, id_org: int, params: dict
         )
     )).scalar_one()
     if count == 0:
-        return {"error": f"« {media.media_name} » n'est pas dans le panier "
-                         f"« {basket.basket_name} »."}
+        return {"error": f"\"{media.media_name}\" is not in basket "
+                         f"\"{basket.basket_name}\"."}
     return {
         "action_type": "remove_audio_track",
         "params": {"id_basket": basket.id_basket, "id_media": media.id_media},
-        "description": f"Retirer la piste « {media.media_name} » du panier audio "
-                       f"« {basket.basket_name} ».",
+        "description": f"Remove track \"{media.media_name}\" from audio basket "
+                       f"\"{basket.basket_name}\".",
         "warnings": [],
     }
 
@@ -514,9 +514,9 @@ async def _resolve_feed_media(db: AsyncSession, id_org: int, name: str):
         await db.execute(base.where(CmsMedia.media_name.ilike(f"%{name}%")))
     ).scalars().all()
     if not matches:
-        return None, {"error": f"Aucun feed nommé « {name} »."}
+        return None, {"error": f"No feed named \"{name}\"."}
     if len(matches) > 1:
-        return None, {"error": f"Plusieurs feeds correspondent à « {name} »",
+        return None, {"error": f"Several feeds match \"{name}\"",
                       "candidates": [m.media_name for m in matches[:8]]}
     return matches[0], None
 
@@ -542,7 +542,7 @@ async def _resolve_target_config(
     if len(grp) == 1:
         return {"target_type": "group", "target_ids": [grp[0].id_group]}, None
     if len(grp) > 1:
-        return None, {"error": f"Plusieurs groupes correspondent à « {target} »",
+        return None, {"error": f"Several groups match \"{target}\"",
                       "candidates": [g.group_name for g in grp[:8]]}
 
     players = (await db.execute(
@@ -554,9 +554,9 @@ async def _resolve_target_config(
     if len(players) == 1:
         return {"target_type": "player", "target_ids": [players[0].id_player]}, None
     if len(players) > 1:
-        return None, {"error": f"Plusieurs players correspondent à « {target} »",
+        return None, {"error": f"Several players match \"{target}\"",
                       "candidates": [p.player_name for p in players[:8]]}
-    return None, {"error": f"Aucun groupe ni player nommé « {target} »."}
+    return None, {"error": f"No group or player named \"{target}\"."}
 
 
 async def resolve_create_event(db: AsyncSession, id_org: int, params: dict) -> dict:
@@ -564,10 +564,10 @@ async def resolve_create_event(db: AsyncSession, id_org: int, params: dict) -> d
     une playlist OU un média visuel, ciblant l'org entière par défaut (ou un groupe/player)."""
     name = str(params.get("name", "")).strip()
     if not name:
-        return {"error": "Donnez un nom d'événement."}
+        return {"error": "Give an event name."}
     content = str(params.get("content", "")).strip()
     if not content:
-        return {"error": "Précisez le contenu de l'événement (une playlist ou un média)."}
+        return {"error": "Specify the event content (a playlist or a media item)."}
 
     # Le contenu est une playlist en priorité, sinon un média visuel.
     pl, pl_err = await _resolve_playlist(db, id_org, content)
@@ -575,7 +575,7 @@ async def resolve_create_event(db: AsyncSession, id_org: int, params: dict) -> d
     content_label = ""
     if pl is not None:
         id_playlist = pl.id_playlist
-        content_label = f"la playlist « {pl.playlist_name} »"
+        content_label = f"playlist \"{pl.playlist_name}\""
     elif pl_err and pl_err.get("candidates"):
         return pl_err  # plusieurs playlists → désambiguïse
     else:
@@ -583,30 +583,30 @@ async def resolve_create_event(db: AsyncSession, id_org: int, params: dict) -> d
         if media is None:
             if m_err and m_err.get("candidates"):
                 return m_err
-            return {"error": f"Aucune playlist ni média nommé « {content} »."}
+            return {"error": f"No playlist or media named \"{content}\"."}
         if media.media_type == "audio":
-            return {"error": f"« {media.media_name} » est un média audio — un événement de "
-                             "contenu attend une playlist ou un média visuel."}
+            return {"error": f"\"{media.media_name}\" is an audio file — a content event "
+                             "needs a playlist or a visual media item."}
         id_media = media.id_media
-        content_label = f"le média « {media.media_name} »"
+        content_label = f"media \"{media.media_name}\""
 
     target_config, terr = await _resolve_target_config(db, id_org, str(params.get("target", "")))
     if terr:
         return terr
 
     duration_ms = None
-    dur_label = "durée indéfinie (revert manuel)"
+    dur_label = "no end time (manual revert)"
     if params.get("duration_seconds"):
         secs = float(params["duration_seconds"])
         duration_ms = int(secs * 1000)
-        dur_label = f"durée {int(secs)} s"
+        dur_label = f"duration {int(secs)} s"
 
     # « Garder les écrans allumés » (auto-power heures d'ouverture) : l'event maintient
     # l'affichage des players ciblés hors horaires (ex. « on ferme à 23h ce soir »).
     keep_screens_on = params.get("keep_screens_on") is True
 
     tgt = target_config["target_type"]
-    target_label = {"org": "toute l'organisation"}.get(tgt, f"cible {tgt}")
+    target_label = {"org": "the whole organization"}.get(tgt, f"target {tgt}")
     return {
         "action_type": "create_event",
         "params": {
@@ -618,10 +618,10 @@ async def resolve_create_event(db: AsyncSession, id_org: int, params: dict) -> d
             "keep_screens_on": keep_screens_on,
         },
         "description": (
-            f"Créer l'événement manuel « {name} » diffusant {content_label} sur "
+            f"Create manual event \"{name}\" playing {content_label} on "
             f"{target_label}, {dur_label}"
-            + (", écrans MAINTENUS ALLUMÉS pendant l'événement" if keep_screens_on else "")
-            + ". Il sera créé INACTIF — à déclencher depuis Événements."
+            + (", screens KEPT ON during the event" if keep_screens_on else "")
+            + ". It will be created INACTIVE — trigger it from Events."
         ),
         "warnings": [],
     }
@@ -634,7 +634,7 @@ async def resolve_remove_feed_from_active_playlists(
     d'impact (état de diffusion par playlist) à confirmer (action en masse, Tier 3)."""
     name = str(params.get("feed", "") or params.get("media", "")).strip()
     if not name:
-        return {"error": "Précisez le feed à retirer."}
+        return {"error": "Specify the feed to remove."}
     media, err = await _resolve_feed_media(db, id_org, name)
     if err:
         return err
@@ -643,7 +643,7 @@ async def resolve_remove_feed_from_active_playlists(
     impact = await media_deletion.analyze(db, media)
     playlists = impact.get("playlists", [])
     if not playlists:
-        return {"error": f"Le feed « {media.media_name} » n'est dans aucune playlist."}
+        return {"error": f"Feed \"{media.media_name}\" is not in any playlist."}
 
     id_playlists = [p["id_playlist"] for p in playlists]
     live = [p for p in playlists if p.get("broadcast") == "active"]
@@ -651,12 +651,12 @@ async def resolve_remove_feed_from_active_playlists(
     warnings = []
     if live:
         warnings.append(
-            f"{len(live)} playlist(s) sont EN DIFFUSION en ce moment : "
-            f"{', '.join(p['playlist_name'] for p in live)} — les écrans changeront."
+            f"{len(live)} playlist(s) are ON AIR right now: "
+            f"{', '.join(p['playlist_name'] for p in live)} — screens will change."
         )
     if emptied:
         warnings.append(
-            f"{len(emptied)} playlist(s) n'auront plus aucun contenu : "
+            f"{len(emptied)} playlist(s) will be left with no content: "
             f"{', '.join(p['playlist_name'] for p in emptied)}."
         )
     listing = ", ".join(f"{p['playlist_name']} ({p.get('broadcast', 'inactive')})"
@@ -669,7 +669,7 @@ async def resolve_remove_feed_from_active_playlists(
             "feed_name": media.media_name,
         },
         "description": (
-            f"Retirer le feed « {media.media_name} » de {len(id_playlists)} playlist(s) : "
+            f"Remove feed \"{media.media_name}\" from {len(id_playlists)} playlist(s): "
             f"{listing}{'…' if len(playlists) > 6 else ''}."
         ),
         "warnings": warnings,
@@ -684,8 +684,8 @@ async def _resolve_player_command_target(db: AsyncSession, id_org: int, params: 
             select(CmsPlayer.id_player, CmsPlayer.player_name).where(CmsPlayer.id_org == id_org)
         )).all()
         if not rows:
-            return None, None, None, {"error": "Aucun player dans l'organisation."}
-        return [r.id_player for r in rows], [r.player_name for r in rows], "tous les players", None
+            return None, None, None, {"error": "No player in the organization."}
+        return [r.id_player for r in rows], [r.player_name for r in rows], "all players", None
 
     from app.models.player_group import CmsPlayerGroup, CmsPlayerGroupMember
     grp = (await db.execute(
@@ -695,7 +695,7 @@ async def _resolve_player_command_target(db: AsyncSession, id_org: int, params: 
         )
     )).scalars().all()
     if len(grp) > 1:
-        return None, None, None, {"error": f"Plusieurs groupes correspondent à « {target} »",
+        return None, None, None, {"error": f"Several groups match \"{target}\"",
                                   "candidates": [g.group_name for g in grp[:8]]}
     if len(grp) == 1:
         members = (await db.execute(
@@ -705,17 +705,17 @@ async def _resolve_player_command_target(db: AsyncSession, id_org: int, params: 
         )).all()
         if not members:
             return None, None, None, {
-                "error": f"Le groupe « {grp[0].group_name} » n'a aucun player."
+                "error": f"Group \"{grp[0].group_name}\" has no player."
             }
         return ([m.id_player for m in members], [m.player_name for m in members],
-                f"groupe « {grp[0].group_name} »", None)
+                f"group \"{grp[0].group_name}\"", None)
 
     from app.models.organization import CmsSite
     sites = (await db.execute(select(CmsSite).where(
         CmsSite.id_org == id_org, CmsSite.site_name.ilike(f"%{target}%")
     ))).scalars().all()
     if len(sites) > 1:
-        return None, None, None, {"error": f"Plusieurs sites correspondent à « {target} »",
+        return None, None, None, {"error": f"Several sites match \"{target}\"",
                                   "candidates": [s.site_name for s in sites[:8]]}
     if len(sites) == 1:
         members = (await db.execute(
@@ -724,10 +724,10 @@ async def _resolve_player_command_target(db: AsyncSession, id_org: int, params: 
         )).all()
         if not members:
             return None, None, None, {
-                "error": f"Le site « {sites[0].site_name} » n'a aucun player."
+                "error": f"Site \"{sites[0].site_name}\" has no player."
             }
         return ([m.id_player for m in members], [m.player_name for m in members],
-                f"site « {sites[0].site_name} »", None)
+                f"site \"{sites[0].site_name}\"", None)
 
     players = (await db.execute(
         select(CmsPlayer).where(
@@ -736,12 +736,12 @@ async def _resolve_player_command_target(db: AsyncSession, id_org: int, params: 
         )
     )).scalars().all()
     if len(players) > 1:
-        return None, None, None, {"error": f"Plusieurs players correspondent à « {target} »",
+        return None, None, None, {"error": f"Several players match \"{target}\"",
                                   "candidates": [pl.player_name for pl in players[:8]]}
     if len(players) == 1:
         return ([players[0].id_player], [players[0].player_name],
-                f"player « {players[0].player_name} »", None)
-    return None, None, None, {"error": f"Aucun groupe ni player nommé « {target} »."}
+                f"player \"{players[0].player_name}\"", None)
+    return None, None, None, {"error": f"No group or player named \"{target}\"."}
 
 
 def _make_command_resolver(action_type: str):
@@ -754,7 +754,7 @@ def _make_command_resolver(action_type: str):
         return {
             "action_type": action_type,
             "params": {"player_ids": ids, "label": label, "names": names[:10]},
-            "description": f"{meta['verb']} sur {label} ({len(ids)} player·s).",
+            "description": f"{meta['verb']} on {label} ({len(ids)} player(s)).",
             "warnings": [meta["warn"]] if meta["warn"] else [],
         }
 
@@ -768,13 +768,13 @@ async def resolve_play_vod(db: AsyncSession, id_org: int, params: dict) -> dict:
     from app.services.vod_targeting import vod_player_ids
     name = str(params.get("media") or params.get("video") or "").strip()
     if not name:
-        return {"error": "Quelle vidéo voulez-vous lancer ?"}
+        return {"error": "Which video do you want to play?"}
     media, err = await _resolve_media(db, id_org, name)
     if err:
         return err
     if media.media_type == "audio":
-        return {"error": f"« {media.media_name} » est un média audio — la VOD vise "
-                         "les vidéos/images."}
+        return {"error": f"\"{media.media_name}\" is an audio file — VOD is for "
+                         "videos/images."}
 
     configs = (await db.execute(
         select(CmsVodConfig)
@@ -782,15 +782,15 @@ async def resolve_play_vod(db: AsyncSession, id_org: int, params: dict) -> dict:
         .where(CmsVodConfig.id_org == id_org, CmsVodConfigMedia.id_media == media.id_media)
     )).scalars().all()
     if not configs:
-        return {"error": f"« {media.media_name} » n'est dans aucune liste VOD. "
-                         "Ajoutez-le d'abord à une configuration VOD."}
+        return {"error": f"\"{media.media_name}\" is not in any VOD list. "
+                         "Add it to a VOD configuration first."}
     # Cible résolue par config (source unique) : une config en ciblage SITE vise tous les
     # players du site, pas une liste explicite.
     allowed: set[int] = set()
     for cfg in configs:
         allowed |= await vod_player_ids(db, cfg)
     if not allowed:
-        return {"error": "Aucun player n'est rattaché à la VOD de ce média."}
+        return {"error": "No player is attached to this media item's VOD."}
 
     mode = str(params.get("mode") or "once")
     if mode not in ("once", "loop", "stop"):
@@ -803,21 +803,21 @@ async def resolve_play_vod(db: AsyncSession, id_org: int, params: dict) -> dict:
             return terr
         target_ids = [i for i in ids if i in allowed]
         if not target_ids:
-            return {"error": f"{label} n'est pas dans la VOD de « {media.media_name} »."}
+            return {"error": f"{label} is not in the VOD of \"{media.media_name}\"."}
     else:
         target_ids = sorted(allowed)
-        label = "tous les players VOD"
+        label = "all VOD players"
 
     names = [r[0] for r in (await db.execute(
         select(CmsPlayer.player_name).where(CmsPlayer.id_player.in_(target_ids))
     )).all()]
-    verb = {"once": "Lancer (une fois)", "loop": "Lancer en boucle",
-            "stop": "Arrêter la lecture de"}[mode]
+    verb = {"once": "Play (once)", "loop": "Play in a loop",
+            "stop": "Stop playing"}[mode]
     return {
         "action_type": "play_vod",
         "params": {"id_media": media.id_media, "mode": mode,
                    "player_ids": target_ids, "label": label, "names": names[:10]},
-        "description": f"{verb} « {media.media_name} » sur {label} ({len(target_ids)} player·s).",
+        "description": f"{verb} \"{media.media_name}\" on {label} ({len(target_ids)} player(s)).",
         "warnings": [],
     }
 
@@ -827,21 +827,21 @@ async def resolve_rename_player(db: AsyncSession, id_org: int, params: dict) -> 
     current = str(params.get("player") or params.get("current") or "").strip()
     new_name = str(params.get("new_name") or params.get("name") or "").strip()
     if not current or not new_name:
-        return {"error": "Donnez le player à renommer et son nouveau nom."}
+        return {"error": "Give the player to rename and its new name."}
     players = (await db.execute(
         select(CmsPlayer).where(
             CmsPlayer.id_org == id_org, CmsPlayer.player_name.ilike(f"%{current}%")
         )
     )).scalars().all()
     if not players:
-        return {"error": f"Aucun player nommé « {current} »."}
+        return {"error": f"No player named \"{current}\"."}
     if len(players) > 1:
-        return {"error": f"Plusieurs players correspondent à « {current} »",
+        return {"error": f"Several players match \"{current}\"",
                 "candidates": [p.player_name for p in players[:8]]}
     return {
         "action_type": "rename_player",
         "params": {"id_player": players[0].id_player, "new_name": new_name},
-        "description": f"Renommer le player « {players[0].player_name} » en « {new_name} ».",
+        "description": f"Rename player \"{players[0].player_name}\" to \"{new_name}\".",
         "warnings": [],
     }
 
@@ -852,7 +852,7 @@ _DAY_KEYS = {
     "jeu": 3, "thu": 3, "ven": 4, "fri": 4, "vie": 4, "sam": 5, "sat": 5,
     "dim": 6, "sun": 6, "dom": 6,
 }
-_DAY_LABELS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 def _parse_days(v) -> list[int] | None:
@@ -925,15 +925,15 @@ def _build_time_rule(params: dict) -> dict:
 
 def _describe_rule(rule: dict) -> str:
     if rule["rule_type"] == "always":
-        return "diffusion permanente"
+        return "always on air"
     bits = []
     if rule.get("days_of_week"):
         bits.append("/".join(_DAY_LABELS[d] for d in rule["days_of_week"]))
     if rule.get("time_start") or rule.get("time_end"):
         bits.append(f"{rule.get('time_start') or '00:00'}–{rule.get('time_end') or '23:59'}")
     if rule.get("date_from") or rule.get("date_to"):
-        bits.append(f"du {rule.get('date_from') or '…'} au {rule.get('date_to') or '…'}")
-    return ", ".join(bits) or "diffusion permanente"
+        bits.append(f"from {rule.get('date_from') or '…'} to {rule.get('date_to') or '…'}")
+    return ", ".join(bits) or "always on air"
 
 
 async def _resolve_schedule_target(db: AsyncSession, id_org: int, target: str):
@@ -941,26 +941,26 @@ async def _resolve_schedule_target(db: AsyncSession, id_org: int, target: str):
     target = (target or "").strip()
     if not target:
         return None, None, None, {
-            "error": "Précisez la cible du programme (un player ou un groupe)."
+            "error": "Specify the schedule target (a player or a group)."
         }
     from app.models.player_group import CmsPlayerGroup
     grp = (await db.execute(select(CmsPlayerGroup).where(
         CmsPlayerGroup.id_org == id_org, CmsPlayerGroup.group_name.ilike(f"%{target}%")
     ))).scalars().all()
     if len(grp) > 1:
-        return None, None, None, {"error": f"Plusieurs groupes correspondent à « {target} »",
+        return None, None, None, {"error": f"Several groups match \"{target}\"",
                                   "candidates": [g.group_name for g in grp[:8]]}
     if len(grp) == 1:
-        return "player_group", grp[0].id_group, f"groupe « {grp[0].group_name} »", None
+        return "player_group", grp[0].id_group, f"group \"{grp[0].group_name}\"", None
     players = (await db.execute(select(CmsPlayer).where(
         CmsPlayer.id_org == id_org, CmsPlayer.player_name.ilike(f"%{target}%")
     ))).scalars().all()
     if len(players) > 1:
-        return None, None, None, {"error": f"Plusieurs players correspondent à « {target} »",
+        return None, None, None, {"error": f"Several players match \"{target}\"",
                                   "candidates": [pl.player_name for pl in players[:8]]}
     if len(players) == 1:
-        return "player", players[0].id_player, f"player « {players[0].player_name} »", None
-    return None, None, None, {"error": f"Aucun groupe ni player nommé « {target} »."}
+        return "player", players[0].id_player, f"player \"{players[0].player_name}\"", None
+    return None, None, None, {"error": f"No group or player named \"{target}\"."}
 
 
 async def _resolve_schedule(db: AsyncSession, id_org: int, name: str):
@@ -975,9 +975,9 @@ async def _resolve_schedule(db: AsyncSession, id_org: int, name: str):
         await db.execute(base.where(CmsSchedule.schedule_name.ilike(f"%{name}%")))
     ).scalars().all()
     if not matches:
-        return None, {"error": f"Aucun programme nommé « {name} »."}
+        return None, {"error": f"No schedule named \"{name}\"."}
     if len(matches) > 1:
-        return None, {"error": f"Plusieurs programmes correspondent à « {name} »",
+        return None, {"error": f"Several schedules match \"{name}\"",
                       "candidates": [s.schedule_name for s in matches[:8]]}
     return matches[0], None
 
@@ -995,10 +995,10 @@ async def resolve_create_schedule(db: AsyncSession, id_org: int, params: dict) -
     cible (player/groupe) selon une règle horaire."""
     name = str(params.get("name") or params.get("schedule_name") or "").strip()
     if not name:
-        return {"error": "Donnez un nom de programme."}
+        return {"error": "Give a schedule name."}
     content = str(params.get("playlist") or params.get("content") or "").strip()
     if not content:
-        return {"error": "Quelle playlist programmer ?"}
+        return {"error": "Which playlist should be scheduled?"}
     pl, err = await _resolve_playlist(db, id_org, content)
     if err:
         return err
@@ -1012,14 +1012,14 @@ async def resolve_create_schedule(db: AsyncSession, id_org: int, params: dict) -
     valid_until = _parse_iso_date(params.get("valid_until"))
     validity = ""
     if valid_from or valid_until:
-        validity = f" (validité {valid_from or '…'} → {valid_until or '…'})"
+        validity = f" (valid {valid_from or '…'} → {valid_until or '…'})"
     return {
         "action_type": "create_schedule",
         "params": {"schedule_name": name, "id_playlist": pl.id_playlist,
                    "target_type": tt, "target_id": tid, "rule": rule,
                    "priority": priority, "valid_from": valid_from, "valid_until": valid_until},
-        "description": (f"Programmer « {pl.playlist_name} » sur {tlabel} — {_describe_rule(rule)}"
-                        f"{validity}, priorité {priority}."),
+        "description": (f"Schedule \"{pl.playlist_name}\" on {tlabel} — {_describe_rule(rule)}"
+                        f"{validity}, priority {priority}."),
         "warnings": [],
     }
 
@@ -1037,9 +1037,9 @@ async def resolve_delete_schedule(db: AsyncSession, id_org: int, params: dict) -
     return {
         "action_type": "delete_schedule",
         "params": {"id_schedule": sched.id_schedule},
-        "description": (f"Supprimer le programme « {sched.schedule_name} » "
-                        f"({ntargets} cible·s)."),
-        "warnings": ["Les players concernés cesseront de diffuser selon ce programme."],
+        "description": (f"Delete schedule \"{sched.schedule_name}\" "
+                        f"({ntargets} target(s))."),
+        "warnings": ["The affected players will stop playing according to this schedule."],
     }
 
 
@@ -1065,9 +1065,9 @@ async def _resolve_screen_targets(db: AsyncSession, id_org: int, params: dict,
             excluded.append(pl.player_name)
     if not equipped:
         return None, None, None, None, {
-            "error": f"Aucun player de {label} n'est configuré pour piloter un écran "
-                     "(contrôleur RS232/IP/CEC ou coupure de sortie vidéo). "
-                     "Configurez-le d'abord (réservé à l'humain)."}
+            "error": f"No player in {label} is configured to control a screen "
+                     "(RS232/IP/CEC controller or video output cut-off). "
+                     "Configure it first (done by a human)."}
     return ([e[0] for e in equipped], [e[1] for e in equipped], excluded, label, None)
 
 
@@ -1075,7 +1075,7 @@ def _screen_excl_warning(excluded: list[str]) -> list[str]:
     if not excluded:
         return []
     head = ", ".join(excluded[:6]) + ("…" if len(excluded) > 6 else "")
-    return [f"{len(excluded)} player·s non équipés d'un contrôleur d'écran (ignorés) : {head}."]
+    return [f"{len(excluded)} player(s) without a screen controller (skipped): {head}."]
 
 
 async def resolve_screen_power(db: AsyncSession, id_org: int, params: dict) -> dict:
@@ -1084,16 +1084,16 @@ async def resolve_screen_power(db: AsyncSession, id_org: int, params: dict) -> d
     on = state in ("on", "allume", "allumer", "true", "1", "marche")
     if state not in ("on", "off", "allume", "allumer", "eteins", "éteins", "eteindre",
                      "éteindre", "true", "false", "0", "1", "marche", "arret", "arrêt"):
-        return {"error": "Préciser « allumer » (on) ou « éteindre » (off)."}
+        return {"error": "Specify \"on\" or \"off\"."}
     eq_ids, eq_names, excluded, label, err = await _resolve_screen_targets(db, id_org, params)
     if err:
         return err
     cmd = "power_on" if on else "power_off"
-    verb = "Allumer" if on else "Éteindre"
+    verb = "Turn on" if on else "Turn off"
     return {
         "action_type": "screen_power",
         "params": {"player_ids": eq_ids, "display_cmd": cmd, "names": eq_names[:10]},
-        "description": f"{verb} l'écran de {label} ({len(eq_ids)} écran·s équipé·s).",
+        "description": f"{verb} the screen of {label} ({len(eq_ids)} equipped screen(s)).",
         "warnings": _screen_excl_warning(excluded),
     }
 
@@ -1102,7 +1102,7 @@ async def resolve_screen_set_input(db: AsyncSession, id_org: int, params: dict) 
     """Change la source d'entrée de l'écran physique (hdmi1/hdmi2/dp/pc)."""
     source = str(params.get("source") or params.get("input") or "").strip().lower().replace(" ", "")
     if source not in ("hdmi1", "hdmi2", "dp", "pc"):
-        return {"error": "Source attendue : hdmi1, hdmi2, dp ou pc."}
+        return {"error": "Expected source: hdmi1, hdmi2, dp or pc."}
     # set_input exige un vrai contrôleur (RS232/IP/CEC) — le repli « coupure de
     # sortie vidéo » ne sait pas changer d'entrée.
     eq_ids, eq_names, excluded, label, err = await _resolve_screen_targets(
@@ -1113,8 +1113,8 @@ async def resolve_screen_set_input(db: AsyncSession, id_org: int, params: dict) 
         "action_type": "screen_set_input",
         "params": {"player_ids": eq_ids, "display_cmd": "set_input", "source": source,
                    "names": eq_names[:10]},
-        "description": f"Basculer l'écran de {label} sur la source « {source} » "
-                       f"({len(eq_ids)} écran·s équipé·s).",
+        "description": f"Switch the screen of {label} to source \"{source}\" "
+                       f"({len(eq_ids)} equipped screen(s)).",
         "warnings": _screen_excl_warning(excluded),
     }
 
@@ -1132,8 +1132,8 @@ async def resolve_hdmi_switch(db: AsyncSession, id_org: int, params: dict) -> di
     elif mode in ("stop", "off", "playlist", "retour", "revenir"):
         mode = "stop"
     else:
-        return {"error": "Préciser le mode : « start » (basculer sur l'entrée HDMI) ou "
-                         "« stop » (revenir à la playlist)."}
+        return {"error": "Specify the mode: \"start\" (switch to the HDMI input) or "
+                         "\"stop\" (back to the playlist)."}
     ids, _names, label, err = await _resolve_player_command_target(db, id_org, params)
     if err:
         return err
@@ -1142,19 +1142,19 @@ async def resolve_hdmi_switch(db: AsyncSession, id_org: int, params: dict) -> di
     capable = [(p.id_player, p.player_name) for p in players if _player_has_hdmi_input(p)]
     excluded = [p.player_name for p in players if not _player_has_hdmi_input(p)]
     if not capable:
-        return {"error": f"Aucun player de {label} n'a d'entrée HDMI physique "
-                         "(BrightSign gamme XT / 4K1142 / XD1230)."}
-    verb = ("Basculer l'écran sur l'entrée HDMI" if mode == "start"
-            else "Revenir à la playlist (reprise à l'heure courante)")
+        return {"error": f"No player in {label} has a physical HDMI input "
+                         "(BrightSign XT series / 4K1142 / XD1230)."}
+    verb = ("Switch the screen to the HDMI input" if mode == "start"
+            else "Back to the playlist (resumes at the current time)")
     warns = []
     if excluded:
         head = ", ".join(excluded[:6]) + ("…" if len(excluded) > 6 else "")
-        warns.append(f"{len(excluded)} player·s sans entrée HDMI (ignorés) : {head}.")
+        warns.append(f"{len(excluded)} player(s) without an HDMI input (skipped): {head}.")
     return {
         "action_type": "hdmi_switch",
         "params": {"player_ids": [c[0] for c in capable], "mode": mode,
                    "names": [c[1] for c in capable][:10]},
-        "description": f"{verb} — {label} ({len(capable)} player·s à entrée HDMI).",
+        "description": f"{verb} — {label} ({len(capable)} player(s) with an HDMI input).",
         "warnings": warns,
     }
 
@@ -1166,27 +1166,27 @@ async def resolve_set_player_timezone(db: AsyncSession, id_org: int, params: dic
     libellé natif (CET…) pour BrightSign — qui REBOOTE pour appliquer."""
     tz = str(params.get("timezone", "")).strip()
     if not tz or len(tz) > 64 or not re.fullmatch(r"[A-Za-z0-9_+\-/ ]+", tz):
-        return {"error": "Fuseau invalide — attendu : identifiant IANA (ex. Europe/Paris), "
-                         "fuseau Windows canonique, ou libellé BrightSign (ex. CET)."}
+        return {"error": "Invalid time zone — expected: an IANA identifier (e.g. Europe/Paris), "
+                         "a canonical Windows time zone, or a BrightSign label (e.g. CET)."}
     ids, names, label, err = await _resolve_player_command_target(db, id_org, params)
     if err:
         return err
     if len(ids) != 1:
-        return {"error": "Le fuseau se règle player PAR player — précisez UN player "
-                         f"(cible actuelle : {label}, {len(ids)} players)."}
+        return {"error": "The time zone is set one player AT A TIME — specify ONE player "
+                         f"(current target: {label}, {len(ids)} players)."}
     player = (await db.execute(
         select(CmsPlayer).where(CmsPlayer.id_player == ids[0]))).scalar_one_or_none()
     warns = []
     if player is not None and player.player_os == "brightsign":
-        warns.append("BrightSign : libellé de fuseau NATIF attendu (ex. CET ≡ Europe/Paris) "
-                     "et le player REDÉMARRE pour appliquer.")
+        warns.append("BrightSign: a NATIVE time zone label is expected (e.g. CET ≡ Europe/Paris) "
+                     "and the player REBOOTS to apply it.")
     elif player is not None and (player.player_os or "").startswith("windows"):
-        warns.append("Windows : fuseau canonique du groupe (ex. Monaco → fuseau d'Europe "
-                     "centrale).")
+        warns.append("Windows: canonical time zone of the group (e.g. Monaco → Central European "
+                     "time).")
     return {
         "action_type": "set_player_timezone",
         "params": {"player_ids": ids, "timezone": tz, "names": names[:10]},
-        "description": f"Régler le fuseau de {label} sur « {tz} ».",
+        "description": f"Set the time zone of {label} to \"{tz}\".",
         "warnings": warns,
     }
 
@@ -1223,17 +1223,17 @@ async def resolve_update_players(db: AsyncSession, id_org: int, params: dict) ->
             continue
         g = groups.setdefault(latest.id_version, {
             "id_version": latest.id_version, "version": latest.version,
-            "platform": platform or "générique", "player_ids": [], "names": [],
+            "platform": platform or "generic", "player_ids": [], "names": [],
         })
         g["player_ids"].append(p.id_player)
         g["names"].append(p.player_name)
 
     if not groups:
         if up_to_date and not no_version:
-            return {"error": f"Rien à faire : les players de {label} sont déjà à jour "
+            return {"error": f"Nothing to do: the players of {label} are already up to date "
                              f"({', '.join(up_to_date[:8])})."}
-        return {"error": f"Aucune version au catalogue pour les players de {label} — "
-                         "publiez d'abord une version dans Réglages → Mises à jour."}
+        return {"error": f"No version in the catalog for the players of {label} — "
+                         "publish a version first in Settings → Updates."}
 
     total = sum(len(g["player_ids"]) for g in groups.values())
     parts = [
@@ -1241,20 +1241,20 @@ async def resolve_update_players(db: AsyncSession, id_org: int, params: dict) ->
         f"{'…' if len(g['names']) > 6 else ''})"
         for g in groups.values()
     ]
-    warnings = ["Chaque player télécharge puis INSTALLE la mise à jour et redémarre son "
-                "application (bref écran noir au moment de l'install)."]
+    warnings = ["Each player downloads then INSTALLS the update and restarts its "
+                "application (brief black screen during the install)."]
     if up_to_date:
         head = ", ".join(up_to_date[:6]) + ("…" if len(up_to_date) > 6 else "")
-        warnings.append(f"{len(up_to_date)} player·s déjà à jour (ignorés) : {head}.")
+        warnings.append(f"{len(up_to_date)} player(s) already up to date (skipped): {head}.")
     if no_version:
         head = ", ".join(no_version[:6]) + ("…" if len(no_version) > 6 else "")
-        warnings.append(f"{len(no_version)} player·s sans version au catalogue pour leur "
-                        f"plateforme (ignorés) : {head}.")
+        warnings.append(f"{len(no_version)} player(s) with no version in the catalog for their "
+                        f"platform (skipped): {head}.")
     return {
         "action_type": "update_players",
         "params": {"groups": list(groups.values()), "label": label},
-        "description": (f"Mettre à jour {total} player·s de {label} vers la dernière "
-                        f"version stable de leur plateforme : {' ; '.join(parts)}."),
+        "description": (f"Update {total} player(s) of {label} to the latest "
+                        f"stable version for their platform: {'; '.join(parts)}."),
         "warnings": warnings,
     }
 
@@ -1266,16 +1266,16 @@ async def resolve_move_media_to_folder(db: AsyncSession, id_org: int, params: di
 
     folder_name = str(params.get("folder", "")).strip()
     if not folder_name:
-        return {"error": "Précisez le dossier de destination."}
+        return {"error": "Specify the destination folder."}
     folders = (await db.execute(select(CmsMediaFolder).where(
         CmsMediaFolder.id_org == id_org,
         CmsMediaFolder.folder_name.ilike(f"%{folder_name}%"),
     ))).scalars().all()
     if not folders:
-        return {"error": f"Aucun dossier nommé « {folder_name} » (créez-le d'abord dans "
-                         "la médiathèque)."}
+        return {"error": f"No folder named \"{folder_name}\" (create it first in "
+                         "the media library)."}
     if len(folders) > 1:
-        return {"error": f"Plusieurs dossiers correspondent à « {folder_name} »",
+        return {"error": f"Several folders match \"{folder_name}\"",
                 "candidates": [f.folder_name for f in folders[:8]]}
     folder = folders[0]
 
@@ -1285,30 +1285,30 @@ async def resolve_move_media_to_folder(db: AsyncSession, id_org: int, params: di
             CmsMedia.is_deleted == False,  # noqa: E712
             CmsMedia.id_folder.is_(None),
         ))).scalars().all()
-        sel_label = "tous les médias non classés"
+        sel_label = "all unfiled media"
     else:
         name = str(params.get("media", "")).strip()
         if not name:
-            return {"error": "Précisez le(s) média(s) à ranger (un nom/motif, ou "
-                             "« non classés »)."}
+            return {"error": "Specify the media to file (a name/pattern, or "
+                             "\"unfiled\")."}
         medias = (await db.execute(select(CmsMedia).where(
             CmsMedia.id_org == id_org,
             CmsMedia.is_deleted == False,  # noqa: E712
             CmsMedia.media_name.ilike(f"%{name}%"),
         ))).scalars().all()
-        sel_label = f"les médias correspondant à « {name} »"
+        sel_label = f"media matching \"{name}\""
     medias = [m for m in medias if m.id_folder != folder.id_folder]
     if not medias:
-        return {"error": "Aucun média à déplacer (déjà dans ce dossier, ou aucune "
-                         "correspondance)."}
+        return {"error": "No media to move (already in this folder, or no "
+                         "match)."}
     names = [m.media_name for m in medias[:8]]
     return {
         "action_type": "move_media_to_folder",
         "params": {"id_media": [m.id_media for m in medias], "id_folder": folder.id_folder,
                    "folder_name": folder.folder_name},
-        "description": (f"Ranger {sel_label} ({len(medias)} média·s : "
+        "description": (f"Move {sel_label} ({len(medias)} media item(s): "
                         + ", ".join(names) + ("…" if len(medias) > 8 else "")
-                        + f") dans le dossier « {folder.folder_name} »."),
+                        + f") to folder \"{folder.folder_name}\"."),
         "warnings": [],
     }
 
@@ -1327,33 +1327,33 @@ async def resolve_update_schedule(db: AsyncSession, id_org: int, params: dict) -
         if e:
             return e
         changes["id_playlist"] = pl.id_playlist
-        bits.append(f"playlist → « {pl.playlist_name} »")
+        bits.append(f"playlist → \"{pl.playlist_name}\"")
     if params.get("priority") is not None:
         changes["priority"] = int(params["priority"])
-        bits.append(f"priorité {changes['priority']}")
+        bits.append(f"priority {changes['priority']}")
     if params.get("active") is not None or params.get("is_active") is not None:
         val = bool(params.get("active") if params.get("active") is not None
                    else params.get("is_active"))
         changes["is_active"] = val
-        bits.append("activé" if val else "désactivé")
+        bits.append("enabled" if val else "disabled")
     vf = _parse_iso_date(params.get("valid_from"))
     vu = _parse_iso_date(params.get("valid_until"))
     if vf is not None:
         changes["valid_from"] = vf
-        bits.append(f"début {vf}")
+        bits.append(f"start {vf}")
     if vu is not None:
         changes["valid_until"] = vu
-        bits.append(f"fin {vu}")
+        bits.append(f"end {vu}")
     if any(params.get(k) for k in ("days", "time_start", "time_end", "date_from", "date_to")):
         rule = _build_time_rule(params)
         changes["rule"] = rule
         bits.append(_describe_rule(rule))
     if len(changes) == 1:
-        return {"error": "Précisez ce qu'il faut modifier (priorité, activation, validité, "
-                         "playlist ou horaires)."}
+        return {"error": "Specify what to change (priority, activation, validity, "
+                         "playlist or times)."}
     return {
         "action_type": "update_schedule", "params": changes,
-        "description": f"Modifier le programme « {sched.schedule_name} » : {', '.join(bits)}.",
+        "description": f"Edit schedule \"{sched.schedule_name}\": {', '.join(bits)}.",
         "warnings": [],
     }
 
@@ -1369,7 +1369,7 @@ async def resolve_add_schedule_target(db: AsyncSession, id_org: int, params: dic
     return {
         "action_type": "add_schedule_target",
         "params": {"id_schedule": sched.id_schedule, "target_type": tt, "target_id": tid},
-        "description": f"Ajouter {label} au programme « {sched.schedule_name} ».",
+        "description": f"Add {label} to schedule \"{sched.schedule_name}\".",
         "warnings": [],
     }
 
@@ -1385,7 +1385,7 @@ async def resolve_remove_schedule_target(db: AsyncSession, id_org: int, params: 
     return {
         "action_type": "remove_schedule_target",
         "params": {"id_schedule": sched.id_schedule, "target_type": tt, "target_id": tid},
-        "description": f"Retirer {label} du programme « {sched.schedule_name} ».",
+        "description": f"Remove {label} from schedule \"{sched.schedule_name}\".",
         "warnings": [],
     }
 
@@ -1404,7 +1404,7 @@ async def resolve_set_playlist_item_rules(db: AsyncSession, id_org: int, params:
     zone_index = (int(zone_human) - 1) if zone_human else None
 
     # Scope optionnel : un player/groupe → override pour cette seule cible (sinon tous).
-    scope, target_id, scope_label = "default", None, "tous les players"
+    scope, target_id, scope_label = "default", None, "all players"
     target = str(params.get("target", "")).strip()
     if target and target.lower() not in ("all", "tous", "tout", "default"):
         scope, target_id, scope_label, terr = await _resolve_schedule_target(db, id_org, target)
@@ -1417,21 +1417,21 @@ async def resolve_set_playlist_item_rules(db: AsyncSession, id_org: int, params:
         cnt_q = cnt_q.where(CmsPlaylistItem.zone_index == zone_index)
     count = (await db.execute(cnt_q)).scalar_one()
     if count == 0:
-        return {"error": f"« {media.media_name} » n'est pas dans la playlist "
-                         f"« {pl.playlist_name} »{f' en zone {zone_human}' if zone_human else ''}."}
+        return {"error": f"\"{media.media_name}\" is not in playlist "
+                         f"\"{pl.playlist_name}\"{f' in zone {zone_human}' if zone_human else ''}."}
 
     rule = _build_time_rule(params)
     rules_list = ([] if rule["rule_type"] == "always"
                   else [{**rule, "scope": scope, "target_id": target_id}])
-    scope_txt = "" if scope == "default" else f" pour {scope_label}"
+    scope_txt = "" if scope == "default" else f" for {scope_label}"
     return {
         "action_type": "set_playlist_item_rules",
         "params": {"id_playlist": pl.id_playlist, "id_media": media.id_media,
                    "zone_index": zone_index, "scope": scope, "target_id": target_id,
                    "rules": rules_list},
-        "description": (f"Régler la diffusion de « {media.media_name} » dans "
-                        f"« {pl.playlist_name} »{scope_txt} : {_describe_rule(rule)} "
-                        f"({count} occurrence·s)."),
+        "description": (f"Set when \"{media.media_name}\" plays in "
+                        f"\"{pl.playlist_name}\"{scope_txt}: {_describe_rule(rule)} "
+                        f"({count} occurrence(s))."),
         "warnings": [],
     }
 
@@ -1448,14 +1448,14 @@ async def resolve_tag_media(db: AsyncSession, id_org: int, params: dict) -> dict
         return err
     value = str(params.get("value") or params.get("tag") or "").strip()
     if not value:
-        return {"error": "Quelle valeur de tag appliquer (ex. « promo ») ?"}
+        return {"error": "Which tag value should be applied (e.g. \"promo\")?"}
     ns_label = str(params.get("namespace") or "").strip() or "Général"
     return {
         "action_type": "tag_media",
         "params": {"id_media": media.id_media, "media_name": media.media_name,
                    "namespace_key": _slug(ns_label), "namespace_label": ns_label, "value": value},
-        "description": (f"Taguer « {media.media_name} » avec « {ns_label} : {value} » "
-                        "(le tag sera créé s'il n'existe pas)."),
+        "description": (f"Tag \"{media.media_name}\" with \"{ns_label}: {value}\" "
+                        "(the tag will be created if it does not exist)."),
         "warnings": [],
     }
 
@@ -1473,8 +1473,8 @@ async def resolve_assign_basket_to_players(db: AsyncSession, id_org: int, params
         "action_type": "assign_basket_to_players",
         "params": {"id_basket": basket.id_basket, "basket_name": basket.basket_name,
                    "player_ids": ids, "label": label, "mix_ratio": ratio},
-        "description": (f"Activer le panier audio « {basket.basket_name} » sur {label} "
-                        f"({len(ids)} player·s), mix {ratio} %."),
+        "description": (f"Enable audio basket \"{basket.basket_name}\" on {label} "
+                        f"({len(ids)} player(s)), mix {ratio}%."),
         "warnings": [],
     }
 
@@ -1489,37 +1489,37 @@ async def resolve_configure_audio_basket(db: AsyncSession, id_org: int, params: 
     bits: list[str] = []
     if params.get("shuffle") is not None:
         changes["shuffle"] = bool(params["shuffle"])
-        bits.append("aléatoire " + ("activé" if changes["shuffle"] else "désactivé"))
+        bits.append("shuffle " + ("on" if changes["shuffle"] else "off"))
     if params.get("trigger_mode") in ("tracks", "minutes"):
         changes["trigger_mode"] = params["trigger_mode"]
     if params.get("trigger_value") is not None:
         changes["trigger_value"] = max(1, int(params["trigger_value"]))
     if "trigger_mode" in changes or "trigger_value" in changes:
-        bits.append(f"déclenche toutes les {changes.get('trigger_value', basket.trigger_value)} "
+        bits.append(f"triggers every {changes.get('trigger_value', basket.trigger_value)} "
                     f"{changes.get('trigger_mode', basket.trigger_mode)}")
     if params.get("active") is not None or params.get("is_active") is not None:
         v = bool(params.get("active") if params.get("active") is not None
                  else params.get("is_active"))
         changes["is_active"] = v
-        bits.append("activé" if v else "désactivé")
+        bits.append("enabled" if v else "disabled")
     if params.get("min_ratio") is not None:
         changes["min_ratio"] = max(0, min(100, int(params["min_ratio"])))
-        bits.append(f"min {changes['min_ratio']} %")
+        bits.append(f"min {changes['min_ratio']}%")
     if params.get("max_ratio") is not None:
         changes["max_ratio"] = max(0, min(100, int(params["max_ratio"])))
-        bits.append(f"max {changes['max_ratio']} %")
+        bits.append(f"max {changes['max_ratio']}%")
     if params.get("ducking_pct") is not None:
         pct = max(0, min(100, int(params["ducking_pct"])))
         duck = dict(basket.ducking_config or {})
         duck["target_pct"] = pct
         changes["ducking_config"] = duck
-        bits.append(f"ducking → musique à {pct} % pendant les annonces")
+        bits.append(f"ducking → music at {pct}% during announcements")
     if len(changes) <= 2:
-        return {"error": "Précisez quoi régler (aléatoire, fréquence du jingle, ducking, "
-                         "bornes min/max, activation)."}
+        return {"error": "Specify what to set (shuffle, jingle frequency, ducking, "
+                         "min/max bounds, activation)."}
     return {
         "action_type": "configure_audio_basket", "params": changes,
-        "description": f"Configurer le panier audio « {basket.basket_name} » : {', '.join(bits)}.",
+        "description": f"Configure audio basket \"{basket.basket_name}\": {', '.join(bits)}.",
         "warnings": [],
     }
 
@@ -1535,8 +1535,8 @@ async def resolve_unassign_basket_from_players(db: AsyncSession, id_org: int, pa
         "action_type": "unassign_basket_from_players",
         "params": {"id_basket": basket.id_basket, "basket_name": basket.basket_name,
                    "player_ids": ids, "label": label},
-        "description": (f"Retirer le panier audio « {basket.basket_name} » de {label} "
-                        f"({len(ids)} player·s)."),
+        "description": (f"Remove audio basket \"{basket.basket_name}\" from {label} "
+                        f"({len(ids)} player(s))."),
         "warnings": [],
     }
 
@@ -1579,7 +1579,7 @@ async def resolve_action(
     """Résout une action en proposition (sans rien écrire). `{error:...}` si impossible."""
     fn = _RESOLVERS.get(action_type)
     if fn is None:
-        return {"error": f"Action inconnue : {action_type}"}
+        return {"error": f"Unknown action: {action_type}"}
     return await fn(db, id_org, params)
 
 
@@ -1656,7 +1656,7 @@ async def _execute_self_contained(
         await db.flush()
         _audit(db, user, action_type, "playlist", pl.id_playlist, params)
         await db.commit()
-        return {"ok": True, "message": f"Playlist « {params['name']} » créée."}
+        return {"ok": True, "message": f"Playlist \"{params['name']}\" created."}
 
     # ── Création de feed (datafeed + média pointeur, comme l'endpoint feed) ────
     if action_type == "create_feed":
@@ -1682,7 +1682,7 @@ async def _execute_self_contained(
             fetch_feed.delay(feed.id_feed)
         except Exception:  # noqa: BLE001 — best-effort, le poll régulier rattrapera
             pass
-        return {"ok": True, "message": f"Feed « {params['feed_name']} » créé."}
+        return {"ok": True, "message": f"Feed \"{params['feed_name']}\" created."}
 
     # ── Paniers audio (ajout/retrait piste) ────────────────────────────────────
     if action_type in ("add_audio_track", "remove_audio_track"):
@@ -1691,14 +1691,14 @@ async def _execute_self_contained(
         id_media = int(params["id_media"])
         if action_type == "add_audio_track":
             db.add(CmsAudioBasketItem(id_basket=id_basket, id_media=id_media))
-            msg = "Piste ajoutée au panier audio."
+            msg = "Track added to the audio basket."
         else:
             from sqlalchemy import delete
             await db.execute(delete(CmsAudioBasketItem).where(
                 CmsAudioBasketItem.id_basket == id_basket,
                 CmsAudioBasketItem.id_media == id_media,
             ))
-            msg = "Piste retirée du panier audio."
+            msg = "Track removed from the audio basket."
         _audit(db, user, action_type, "audio_basket", id_basket, params)
         await db.commit()
         return {"ok": True, "message": msg}
@@ -1723,15 +1723,15 @@ async def _execute_self_contained(
                     db.add(CmsPlayerBasketConfig(
                         id_player=pid, id_basket=id_basket, mix_ratio=ratio,
                         is_active=True, activated_by=user.id_user))
-            msg = (f"Panier « {params['basket_name']} » activé sur {len(pids)} player·s "
-                   f"(mix {ratio} %).")
+            msg = (f"Basket \"{params['basket_name']}\" enabled on {len(pids)} player(s) "
+                   f"(mix {ratio}%).")
         else:
             from sqlalchemy import delete
             await db.execute(delete(CmsPlayerBasketConfig).where(
                 CmsPlayerBasketConfig.id_basket == id_basket,
                 CmsPlayerBasketConfig.id_player.in_(pids),
             ))
-            msg = f"Panier « {params['basket_name']} » retiré de {len(pids)} player·s."
+            msg = f"Basket \"{params['basket_name']}\" removed from {len(pids)} player(s)."
         _audit(db, user, action_type, "audio_basket", id_basket,
                {"player_ids": pids, "mix_ratio": params.get("mix_ratio")})
         await db.commit()
@@ -1746,7 +1746,7 @@ async def _execute_self_contained(
             CmsAudioBasket.id_org == user.id_org,
         ))).scalar_one_or_none()
         if basket is None:
-            return {"ok": False, "error": "Panier audio introuvable."}
+            return {"ok": False, "error": "Audio basket not found."}
         for f in ("shuffle", "trigger_mode", "trigger_value", "is_active",
                   "min_ratio", "max_ratio", "ducking_config"):
             if f in params:
@@ -1758,7 +1758,7 @@ async def _execute_self_contained(
             CmsPlayerBasketConfig.is_active == True,  # noqa: E712
         ))).all()]
         await _dispatch_player_command(pids, "force_sync")
-        return {"ok": True, "message": f"Panier « {basket.basket_name} » configuré."}
+        return {"ok": True, "message": f"Basket \"{basket.basket_name}\" configured."}
 
     # ── Tag d'un média (namespace + valeur créés au besoin, puis assignation) ──
     if action_type == "tag_media":
@@ -1794,7 +1794,7 @@ async def _execute_self_contained(
             select(CmsPlayer.id_player).where(CmsPlayer.id_org == user.id_org)
         )).all()]
         await _dispatch_player_command(org_pids, "force_sync")
-        return {"ok": True, "message": f"« {params['media_name']} » tagué « {params['value']} »."}
+        return {"ok": True, "message": f"\"{params['media_name']}\" tagged \"{params['value']}\"."}
 
     # ── Renommage d'un player ──────────────────────────────────────────────────
     if action_type == "rename_player":
@@ -1802,13 +1802,13 @@ async def _execute_self_contained(
             CmsPlayer.id_player == int(params["id_player"]), CmsPlayer.id_org == user.id_org
         ))).scalar_one_or_none()
         if pl is None:
-            return {"ok": False, "error": "Player introuvable."}
+            return {"ok": False, "error": "Player not found."}
         old = pl.player_name
         pl.player_name = params["new_name"]
         _audit(db, user, action_type, "player", pl.id_player,
                {"old": old, "new": params["new_name"]})
         await db.commit()
-        return {"ok": True, "message": f"Player « {old} » renommé « {params['new_name']} »."}
+        return {"ok": True, "message": f"Player \"{old}\" renamed to \"{params['new_name']}\"."}
 
     # ── Création d'un programme (schedule content) ─────────────────────────────
     if action_type == "create_schedule":
@@ -1836,7 +1836,7 @@ async def _execute_self_contained(
         _audit(db, user, action_type, "schedule", sched.id_schedule, params)
         await db.commit()
         await _push_targets_sync(db, user.id_org, params["target_type"], params["target_id"])
-        return {"ok": True, "message": f"Programme « {params['schedule_name']} » créé."}
+        return {"ok": True, "message": f"Schedule \"{params['schedule_name']}\" created."}
 
     # ── Modification d'un programme (patch partiel + resync des cibles) ────────
     if action_type == "update_schedule":
@@ -1846,7 +1846,7 @@ async def _execute_self_contained(
             CmsSchedule.id_org == user.id_org, CmsSchedule.is_deleted == False,  # noqa: E712
         ))).scalar_one_or_none()
         if sched is None:
-            return {"ok": False, "error": "Programme introuvable."}
+            return {"ok": False, "error": "Schedule not found."}
         if "id_playlist" in params:
             sched.id_playlist = params["id_playlist"]
         if "priority" in params:
@@ -1876,7 +1876,7 @@ async def _execute_self_contained(
             CmsScheduleTarget.id_schedule == sched.id_schedule))).scalars().all()
         for t in targets:
             await _push_targets_sync(db, user.id_org, t.target_type, t.target_id)
-        return {"ok": True, "message": f"Programme « {sched.schedule_name} » modifié."}
+        return {"ok": True, "message": f"Schedule \"{sched.schedule_name}\" updated."}
 
     # ── Ajout / retrait d'une cible d'un programme ─────────────────────────────
     if action_type in ("add_schedule_target", "remove_schedule_target"):
@@ -1886,7 +1886,7 @@ async def _execute_self_contained(
             CmsSchedule.id_org == user.id_org, CmsSchedule.is_deleted == False,  # noqa: E712
         ))).scalar_one_or_none()
         if sched is None:
-            return {"ok": False, "error": "Programme introuvable."}
+            return {"ok": False, "error": "Schedule not found."}
         tt, tid = params["target_type"], int(params["target_id"])
         if action_type == "add_schedule_target":
             exists = (await db.execute(select(CmsScheduleTarget).where(
@@ -1896,14 +1896,14 @@ async def _execute_self_contained(
             if exists is None:
                 db.add(CmsScheduleTarget(id_schedule=sched.id_schedule,
                                          target_type=tt, target_id=tid))
-            msg = "Cible ajoutée au programme."
+            msg = "Target added to the schedule."
         else:
             from sqlalchemy import delete
             await db.execute(delete(CmsScheduleTarget).where(
                 CmsScheduleTarget.id_schedule == sched.id_schedule,
                 CmsScheduleTarget.target_type == tt, CmsScheduleTarget.target_id == tid,
             ))
-            msg = "Cible retirée du programme."
+            msg = "Target removed from the schedule."
         _audit(db, user, action_type, "schedule", sched.id_schedule,
                {"target_type": tt, "target_id": tid})
         await db.commit()
@@ -1918,7 +1918,7 @@ async def _execute_self_contained(
             CmsSchedule.id_org == user.id_org, CmsSchedule.is_deleted == False,  # noqa: E712
         ))).scalar_one_or_none()
         if sched is None:
-            return {"ok": False, "error": "Programme introuvable."}
+            return {"ok": False, "error": "Schedule not found."}
         targets = (await db.execute(select(CmsScheduleTarget).where(
             CmsScheduleTarget.id_schedule == sched.id_schedule))).scalars().all()
         name = sched.schedule_name
@@ -1927,7 +1927,7 @@ async def _execute_self_contained(
         await db.commit()
         for t in targets:
             await _push_targets_sync(db, user.id_org, t.target_type, t.target_id)
-        return {"ok": True, "message": f"Programme « {name} » supprimé."}
+        return {"ok": True, "message": f"Schedule \"{name}\" deleted."}
 
     # ── Création d'un événement manuel (inactif → à déclencher) ────────────────
     if action_type == "create_event":
@@ -1948,9 +1948,9 @@ async def _execute_self_contained(
         await db.flush()
         _audit(db, user, action_type, "event", ev.id_event, params)
         await db.commit()
-        return {"ok": True, "message": f"Événement « {params['event_name']} » créé (inactif)."}
+        return {"ok": True, "message": f"Event \"{params['event_name']}\" created (inactive)."}
 
-    return {"ok": False, "error": "Action non autorisée."}
+    return {"ok": False, "error": "Action not allowed."}
 
 
 async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> dict:
@@ -1966,16 +1966,16 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
     étape avant toute écriture (refus de tout le lot si une étape n'est pas permise).
     """
     if not steps:
-        return {"ok": False, "error": "Aucune action à exécuter."}
+        return {"ok": False, "error": "No action to run."}
 
     # Le contexte RLS (app.current_org_id) est garanti à chaque transaction par le listener
     # `after_begin` (db/session.py) → pas de re-pose défensive nécessaire ici.
     for step in steps:
         act = step.get("act")
         if act not in ACTION_PERMISSIONS:
-            return {"ok": False, "error": "Action non autorisée."}
+            return {"ok": False, "error": "Action not allowed."}
         if not await check_action_permission(db, user.id_user, act):
-            return {"ok": False, "error": f"Permission refusée pour « {act} »."}
+            return {"ok": False, "error": f"Permission denied for \"{act}\"."}
 
     # Imports locaux (évite l'import circulaire endpoint ↔ service)
     from fastapi import Response
@@ -1998,7 +1998,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
             ))).scalar_one_or_none()
             pids = [int(x) for x in params.get("player_ids", [])]
             if media is None or not pids:
-                results.append({"ok": False, "message": "Média ou players VOD introuvables."})
+                results.append({"ok": False, "message": "Media or VOD players not found."})
                 continue
             players_v = (await db.execute(
                 select(CmsPlayer).where(CmsPlayer.id_player.in_(pids))
@@ -2019,8 +2019,8 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                    {"player_ids": pids, "mode": params["mode"]})
             results.append({
                 "ok": True,
-                "message": (f"VOD « {media.media_name} » ({params['mode']}) → "
-                            f"{len(players_v)} player·s."),
+                "message": (f"VOD \"{media.media_name}\" ({params['mode']}) → "
+                            f"{len(players_v)} player(s)."),
             })
             continue
 
@@ -2032,7 +2032,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
             _audit(db, user, act, "player", None,
                    {"player_ids": pids, "display_cmd": params["display_cmd"], **extra})
             results.append({"ok": True,
-                            "message": f"Commande écran envoyée à {len(pids)} écran·s."})
+                            "message": f"Screen command sent to {len(pids)} screen(s)."})
             continue
 
         # Switch entrée HDMI (BrightSign à entrée) : même commande que le drawer/VOD — la
@@ -2049,8 +2049,8 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                 await redis.aclose()
             _audit(db, user, act, "player", None,
                    {"player_ids": pids, "mode": params["mode"]})
-            verb = "Bascule HDMI" if params["mode"] == "start" else "Retour playlist"
-            results.append({"ok": True, "message": f"{verb} envoyée à {len(pids)} player·s."})
+            verb = "HDMI switch" if params["mode"] == "start" else "Back to playlist"
+            results.append({"ok": True, "message": f"{verb} sent to {len(pids)} player(s)."})
             continue
 
         # Fuseau device : commande set_timezone (le player applique et remonte au heartbeat).
@@ -2067,8 +2067,8 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
             _audit(db, user, act, "player", pids[0] if pids else None,
                    {"player_ids": pids, "timezone": params["timezone"]})
             results.append({"ok": True,
-                            "message": f"Fuseau « {params['timezone']} » envoyé "
-                                       f"(vérifier la remontée au prochain heartbeat)."})
+                            "message": f"Time zone \"{params['timezone']}\" sent "
+                                       f"(check it is reported at the next heartbeat)."})
             continue
 
         # Rangement de médias dans un dossier (mutation DB directe, scopée org).
@@ -2084,8 +2084,8 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                    {"id_media": mids, "count": len(medias_mv)})
             await db.commit()
             results.append({"ok": True,
-                            "message": f"{len(medias_mv)} média·s rangé·s dans "
-                                       f"« {params.get('folder_name', '')} »."})
+                            "message": f"{len(medias_mv)} media item(s) moved to "
+                                       f"\"{params.get('folder_name', '')}\"."})
             continue
 
         # Mise à jour OTA §XXX : UN déploiement approuvé PAR version/plateforme (réutilise
@@ -2114,15 +2114,15 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                 _audit(db, user, act, "update_deployment", dep.id_deployment,
                        {"id_version": int(g["id_version"]), "version": g.get("version"),
                         "platform": g.get("platform"), "player_ids": pids})
-                done.append(f"« {g.get('version')} » ({g.get('platform')}) → "
-                            f"{dep.total_targets} player·s")
+                done.append(f"\"{g.get('version')}\" ({g.get('platform')}) → "
+                            f"{dep.total_targets} player(s)")
             await db.commit()
             if not done:
-                results.append({"ok": False, "message": "Aucun player à mettre à jour."})
+                results.append({"ok": False, "message": "No player to update."})
                 continue
             results.append({"ok": True,
-                            "message": "Déploiement OTA créé : " + " ; ".join(done)
-                                       + ". Suivi dans Réglages → Mises à jour."})
+                            "message": "OTA deployment created: " + "; ".join(done)
+                                       + ". Track it in Settings → Updates."})
             continue
 
         # Commande player (dispatch Redis, pas de mutation DB) : fan-out sur les players résolus.
@@ -2132,7 +2132,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
             await _dispatch_player_command(pids, cmd)
             _audit(db, user, act, "player", None, {"player_ids": pids, "command": cmd})
             results.append(
-                {"ok": True, "message": f"Commande « {cmd} » envoyée à {len(pids)} player·s."}
+                {"ok": True, "message": f"Command \"{cmd}\" sent to {len(pids)} player(s)."}
             )
             continue
 
@@ -2155,7 +2155,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                     drafts[id_pl] = after
                     removed += 1
                 _audit(db, user, act, "playlist", id_pl, {"id_media": id_media})
-            results.append({"ok": True, "message": f"Feed retiré de {removed} playlist(s)."})
+            results.append({"ok": True, "message": f"Feed removed from {removed} playlist(s)."})
             continue
 
         if act not in _PLAYLIST_OPS:
@@ -2166,7 +2166,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
         if id_pl not in playlists:
             pl = await _get_playlist(db, id_pl)
             if pl is None:
-                results.append({"ok": False, "message": "Playlist introuvable."})
+                results.append({"ok": False, "message": "Playlist not found."})
                 continue
             playlists[id_pl] = pl
             drafts[id_pl] = await _ensure_draft(db, pl)
@@ -2179,7 +2179,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                 "zone_index": int(params.get("zone_index", 0)),
                 "transition_type": "cut", "rules": [],
             })
-            results.append({"ok": True, "message": "Média ajouté à la playlist."})
+            results.append({"ok": True, "message": "Media added to the playlist."})
         elif act == "add_tagged_content_to_playlist":
             uid = _next_uid(draft)
             order = len(draft)
@@ -2191,7 +2191,7 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                 uid -= 1
                 order += 1
             results.append({"ok": True,
-                            "message": f"{len(params['id_medias'])} contenu(s) ajouté(s)."})
+                            "message": f"{len(params['id_medias'])} item(s) added."})
         elif act == "set_playlist_item_rules":
             id_media = int(params["id_media"])
             zone = params.get("zone_index")
@@ -2207,17 +2207,17 @@ async def execute_batch(db: AsyncSession, user: CmsUser, steps: list[dict]) -> d
                     e["rules"] = kept + [dict(r) for r in rules_list]
                     matched += 1
             if matched == 0:
-                results.append({"ok": False, "message": "Média absent de la playlist."})
+                results.append({"ok": False, "message": "Media not in the playlist."})
                 continue
-            results.append({"ok": True, "message": f"Règles appliquées à {matched} occurrence·s."})
+            results.append({"ok": True, "message": f"Rules applied to {matched} occurrence(s)."})
         else:  # remove_playlist_item
             id_media = int(params["id_media"])
             new = [e for e in draft if e.get("id_media") != id_media]
             if len(new) == len(draft):
-                results.append({"ok": False, "message": "Média déjà absent de la playlist."})
+                results.append({"ok": False, "message": "Media already not in the playlist."})
                 continue
             drafts[id_pl] = new
-            results.append({"ok": True, "message": "Média retiré de la playlist."})
+            results.append({"ok": True, "message": "Media removed from the playlist."})
 
         _audit(db, user, act, "playlist", id_pl, params)
 

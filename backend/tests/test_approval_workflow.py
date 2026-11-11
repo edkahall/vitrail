@@ -203,7 +203,7 @@ async def test_full_cycle_approve_then_campaign_publish(
     # publish bloqué tant que la demande est en revue
     r = await client.post(f"/api/v1/campaigns/{camp.id_campaign}/status",
                           headers=_headers(admin), json={"action": "publish"})
-    assert r.status_code == 409 and "approbation" in r.json()["detail"]
+    assert r.status_code == 409 and "approval" in r.json()["detail"]
 
     # approve (approver custom, pas org-admin) → publish passe
     r = await client.post(f"/api/v1/approvals/{req['id_request']}/approve",
@@ -442,7 +442,14 @@ async def test_delete_terminal_request_and_exports(
     # exports : CSV (motif + nom de ressource) + PDF valide
     r = await client.get("/api/v1/approvals/export.csv", headers=_headers(approver))
     assert r.status_code == 200
-    assert "Rentrée" in r.text and "Non conforme" in r.text and "Rejetée" in r.text
+    assert "Rentrée" in r.text and "Non conforme" in r.text and "Rejected" in r.text
+    assert "approvals_" in r.headers["content-disposition"]
+    # langue du profil de l'exportateur : français si fr (témoin : l'anglais disparaît)
+    approver.locale = "fr"
+    await db_session.commit()
+    r = await client.get("/api/v1/approvals/export.csv", headers=_headers(approver))
+    assert "Rejetée" in r.text and "Rejected" not in r.text
+    assert "approbations_" in r.headers["content-disposition"]
     r = await client.get("/api/v1/approvals/export.csv?status=published",
                          headers=_headers(approver))
     assert "Rentrée" not in r.text  # filtre statut respecté

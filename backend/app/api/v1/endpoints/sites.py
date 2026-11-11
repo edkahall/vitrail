@@ -57,7 +57,7 @@ async def _get_site_or_404(db: AsyncSession, id_org: int, id_site: int) -> CmsSi
         select(CmsSite).where(CmsSite.id_site == id_site, CmsSite.id_org == id_org)
     )).scalar_one_or_none()
     if site is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
     return site
 
 
@@ -210,7 +210,7 @@ async def update_site(
         )).scalars().all()) if cat_ids else set()
         if cat_ids - valid:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Catégorie introuvable")
+                                detail="Category not found")
         existing = (await db.execute(
             select(CmsSiteExcludedCategory).where(
                 CmsSiteExcludedCategory.id_site == id_site)
@@ -359,7 +359,7 @@ async def delete_exception(
         )
     )).scalar_one_or_none()
     if exc is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exception introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exception not found")
     await db.delete(exc)
     await db.commit()
 
@@ -390,7 +390,7 @@ async def _get_player_in_org(db: AsyncSession, id_org: int, id_player: int) -> C
         select(CmsPlayer).where(CmsPlayer.id_player == id_player, CmsPlayer.id_org == id_org)
     )).scalar_one_or_none()
     if p is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     return p
 
 

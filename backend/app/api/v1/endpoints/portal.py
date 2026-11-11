@@ -116,7 +116,7 @@ async def require_advertiser(
     """Réservé aux comptes annonceur liés (miroir de require_retailer)."""
     if current_user.id_advertiser is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Réservé aux comptes annonceur")
+                            detail="Reserved for advertiser accounts")
     return current_user
 
 
@@ -133,10 +133,10 @@ async def _own_campaign(
         )
     )).scalar_one_or_none()
     if camp is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campagne introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     if editable and camp.status != "draft":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail="Seul un brouillon est modifiable")
+                            detail="Only a draft can be edited")
     return camp
 
 
@@ -348,7 +348,7 @@ async def portal_save_site_list(
     unknown = set(body.site_ids) - valid_ids
     if unknown:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Site inconnu dans la sélection")
+                            detail="Unknown site in the selection")
     site_ids = sorted(valid_ids)
 
     existing = (await db.execute(
@@ -390,7 +390,7 @@ async def portal_delete_site_list(
     )).scalar_one_or_none()
     if row is None:  # cross-annonceur = 404, jamais 403
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Liste introuvable")
+                            detail="List not found")
     await db.delete(row)
     await db.commit()
 
@@ -430,11 +430,11 @@ async def portal_occupancy_check(
 ) -> PortalOccupancyResult:
     if body.ends_on < body.starts_on:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="ends_on doit être ≥ starts_on")
+                            detail="ends_on must be ≥ starts_on")
     # Gate : l'annonceur ne peut sonder que les types qu'on lui a autorisés (migr 0095).
     if body.campaign_kind not in await _advertiser_allowed_kinds(db, current_user.id_advertiser):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Type de campagne non autorisé")
+                            detail="Campaign type not allowed")
     # Les cibles sondées doivent exister DANS l'organisation (audit menu ⑨) : la création
     # les valide (`_check_portal_targets`), le SONDAGE ne le faisait pas. Un site étranger
     # résout à zéro écran ⇒ la réponse annonçait « disponible » et le devis portait sur du
@@ -449,7 +449,7 @@ async def portal_occupancy_check(
     if body.campaign_kind == "audio":
         if not body.spots_per_hour:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail="spots_per_hour est requis pour une campagne audio")
+                                detail="spots_per_hour is required for an audio campaign")
         res = await check_audio_occupancy(
             db, current_user.id_org, starts_on=body.starts_on, ends_on=body.ends_on,
             spots_per_hour=body.spots_per_hour, targets=targets,
@@ -521,7 +521,7 @@ async def _check_sites(db: AsyncSession, id_org: int, site_ids: list[int]) -> No
             CmsSite.id_org == id_org, CmsSite.id_site.in_(site_ids))
     )).scalar_one()
     if n != len(set(site_ids)):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
 
 
 async def _check_portal_players(
@@ -534,7 +534,7 @@ async def _check_portal_players(
         return
     if not await _org_portal_player_selection(db, user.id_org):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="La sélection par écran n'est pas activée")
+                            detail="Per-screen selection is not enabled")
     valid = set((await db.execute(
         select(CmsPlayer.id_player).where(
             CmsPlayer.id_org == user.id_org,
@@ -545,7 +545,7 @@ async def _check_portal_players(
     )).scalars().all())
     if set(player_ids) - valid:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Écran introuvable")
+                            detail="Screen not found")
 
 
 async def _check_portal_targets(
@@ -555,7 +555,7 @@ async def _check_portal_targets(
     vendables (helper partagé avec le sondage de disponibilité)."""
     if not body.site_ids and not body.player_ids:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Au moins un site ou un écran")
+                            detail="At least one site or screen is required")
     await _check_sites(db, user.id_org, body.site_ids)
     await _check_portal_players(db, user, body.player_ids)
 
@@ -563,19 +563,19 @@ async def _check_portal_targets(
 def _apply_body(camp: CmsCampaign, body: PortalCampaignBody) -> None:
     if body.ends_on < body.starts_on:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="ends_on doit être ≥ starts_on")
+                            detail="ends_on must be ≥ starts_on")
     # Le TYPE de campagne est immuable après création (change l'inventaire, les créatifs
     # et la tarification — un basculement en cours de vie n'a pas de sens).
     if body.campaign_kind != camp.campaign_kind:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Le type de campagne n'est pas modifiable")
+                            detail="The campaign type cannot be changed")
     camp.campaign_name = body.campaign_name
     camp.starts_on = body.starts_on
     camp.ends_on = body.ends_on
     if camp.campaign_kind == "audio":
         if not body.spots_per_hour:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail="spots_per_hour est requis pour une campagne audio")
+                                detail="spots_per_hour is required for an audio campaign")
         camp.spots_per_hour = body.spots_per_hour
     else:
         camp.sov_percent = 100.0 if body.exclusive else body.sov_percent
@@ -585,7 +585,7 @@ async def _gate_kind(db: AsyncSession, user: CmsUser, kind: str) -> None:
     """403 si l'annonceur lié n'a pas le droit de créer ce type (flags migr 0095)."""
     if kind not in await _advertiser_allowed_kinds(db, user.id_advertiser):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Type de campagne non autorisé")
+                            detail="Campaign type not allowed")
 
 
 @router.post("/campaigns", response_model=CampaignRead, status_code=status.HTTP_201_CREATED)
@@ -598,13 +598,13 @@ async def portal_create_campaign(
     écrans précis (sélection par écran si le réglage org l'autorise, migr 0089)."""
     if body.ends_on < body.starts_on:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="ends_on doit être ≥ starts_on")
+                            detail="ends_on must be ≥ starts_on")
     await _gate_kind(db, current_user, body.campaign_kind)
     await _check_portal_targets(db, current_user, body)
     if body.campaign_kind == "audio":
         if not body.spots_per_hour:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                detail="spots_per_hour est requis pour une campagne audio")
+                                detail="spots_per_hour is required for an audio campaign")
         camp = CmsCampaign(
             id_org=current_user.id_org, id_advertiser=current_user.id_advertiser,
             campaign_name=body.campaign_name, status="draft",
@@ -696,8 +696,8 @@ async def portal_delete_campaign(
     if req is not None and req.status != "changes_requested":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Campagne soumise à validation — elle ne peut plus être supprimée "
-                   "depuis le portail tant que le retailer ne vous a pas rendu la main",
+            detail="Campaign submitted for approval — it can no longer be deleted "
+                   "from the portal until the retailer hands it back to you",
         )
     camp.is_deleted = True
     await approvals_svc.purge_for_resource(db, current_user, "campaign", id_campaign)
@@ -969,7 +969,7 @@ async def portal_upload_creative(
     )).scalar_one()
     if n >= max_creatives:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
-                            detail=f"Quota atteint : {max_creatives} créatifs max")
+                            detail=f"Quota reached: {max_creatives} creatives max")
 
     # Formats acceptés EXCLUSIFS par type de campagne : audio → fichiers audio only,
     # visuel → images/vidéos only (415 sinon).
@@ -980,18 +980,18 @@ async def portal_upload_creative(
     if media_type is None:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=("Formats audio acceptés : MP3, OGG, WAV, AAC, M4A" if is_audio
-                    else "Formats acceptés : JPEG, PNG, GIF, WebP, MP4, MOV, WebM"))
+            detail=("Accepted audio formats: MP3, OGG, WAV, AAC, M4A" if is_audio
+                    else "Accepted formats: JPEG, PNG, GIF, WebP, MP4, MOV, WebM"))
     if file.size is not None and file.size > max_bytes:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            detail=f"Fichier > {max_mb} Mo")
+                            detail=f"File > {max_mb} MB")
 
     storage_key = make_storage_key(current_user.id_org, file.filename or "creative")
     sha256, file_size = await stream_upload(file.file, storage_key, content_type)
     if file_size > max_bytes:  # taille inconnue à l'entrée → garde post-upload
         await delete_file(storage_key)
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            detail=f"Fichier > {max_mb} Mo")
+                            detail=f"File > {max_mb} MB")
 
     # Dossier médiathèque de l'annonceur (créé si absent — même helper que le CMS).
     from app.api.v1.endpoints.campaigns import _ensure_advertiser_folder
@@ -1065,7 +1065,7 @@ async def portal_delete_creative(
         )
     )).scalar_one_or_none()
     if cr is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Créatif introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Creative not found")
     await db.delete(cr)
     await db.commit()
 
@@ -1100,7 +1100,7 @@ async def portal_submit_campaign(
     if not n_creatives or not n_targets:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Il faut au moins un créatif et une cible avant de soumettre")
+            detail="At least one creative and one target are required before submitting")
     # Garde-fou boucle courte : les vidéos uploadées ont leur durée après transcodage
     # → le dépassement se détecte au plus tard ICI (avant d'atteindre le valideur).
     from app.api.v1.endpoints.campaigns import creative_duration_violations
@@ -1108,7 +1108,7 @@ async def portal_submit_campaign(
     if violations:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Créatif(s) trop long(s) : " + " · ".join(violations))
+            detail="Creative(s) too long: " + " · ".join(violations))
     try:
         req, ctx = await approvals_svc.submit(
             db, current_user, "campaign", id_campaign)

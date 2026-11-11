@@ -549,7 +549,8 @@
     "enc_decision_admin_only": "Beyond the limit, only an organisation administrator can start the encode.",
     "enc_decision_delete_hint": "Nothing starts until you choose. You can also delete this media.",
     "enc_decision_failed": "The decision could not be saved.",
-    "enc_downloading": "Fetching file"
+    "enc_downloading": "Fetching file",
+    "system_folder_advertisers": "Advertisers"
   },
   "iam": {
     "title": "Users & Roles",

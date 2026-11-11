@@ -30,10 +30,10 @@ def send_email(
     """Envoie un email texte + pièces jointes. `attachments` = [(filename, data, mime_subtype)].
     Lève EmailError si SMTP non configuré / échec."""
     if not settings.SMTP_HOST:
-        raise EmailError("SMTP non configuré (SMTP_HOST vide).")
+        raise EmailError("SMTP not configured (SMTP_HOST empty).")
     recipients = [a.strip() for a in to if a and a.strip()]
     if not recipients:
-        raise EmailError("Aucun destinataire.")
+        raise EmailError("No recipient.")
 
     msg = EmailMessage()
     msg["From"] = settings.SMTP_FROM
@@ -51,4 +51,4 @@ def send_email(
                 s.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             s.send_message(msg)
     except Exception as e:  # noqa: BLE001
-        raise EmailError(f"Échec de l'envoi SMTP : {e}") from e
+        raise EmailError(f"SMTP send failed: {e}") from e

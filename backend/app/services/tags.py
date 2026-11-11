@@ -15,19 +15,19 @@ from app.models.tag import CmsTagNamespace, CmsTagValue
 # Taxonomie standard livrée par défaut (doit rester cohérente avec la migration 0026).
 # (namespace_key, label, match_mode, applies_to, [(value, label, color), ...])
 STANDARD_NAMESPACES: list[tuple[str, str, str, list[str], list[tuple[str, str, str]]]] = [
-    ("resolution", "Résolution", "any", ["video", "image"],
+    ("resolution", "Resolution", "any", ["video", "image"],
      [("SD", "SD", "#9CA3AF"), ("FHD", "FHD", "#4875B4"), ("UHD", "UHD", "#7C3AED")]),
-    ("region", "Région", "any", [],
+    ("region", "Region", "any", [],
      [("EU", "EU", "#4875B4"), ("FR", "FR", "#3B82F6"), ("DE", "DE", "#F59E0B"),
       ("UK", "UK", "#10B981"), ("US", "US", "#EF4444")]),
-    ("language", "Langue", "any", [],
+    ("language", "Language", "any", [],
      [("fr", "Français", "#3B82F6"), ("en", "English", "#10B981"),
       ("de", "Deutsch", "#F59E0B"), ("es", "Español", "#EF4444")]),
     ("audience", "Audience", "any", [],
-     [("adults", "Adultes", "#6366F1"), ("children", "Enfants", "#F472B6"), ("all", "Tous", "#9CA3AF")]),
-    ("channel", "Canal", "any", [],
-     [("promo", "Promo", "#EF4444"), ("brand", "Marque", "#4875B4"),
-      ("safety", "Sécurité", "#F59E0B"), ("info", "Info", "#10B981")]),
+     [("adults", "Adults", "#6366F1"), ("children", "Children", "#F472B6"), ("all", "All", "#9CA3AF")]),
+    ("channel", "Channel", "any", [],
+     [("promo", "Promo", "#EF4444"), ("brand", "Brand", "#4875B4"),
+      ("safety", "Safety", "#F59E0B"), ("info", "Info", "#10B981")]),
 ]
 
 

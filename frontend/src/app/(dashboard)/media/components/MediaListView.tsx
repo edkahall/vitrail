@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { useFolderLabel } from '@/lib/folderLabel'
 import { Check, Lock, Pencil, ShieldAlert, Trash2 } from 'lucide-react'
 import type { MediaListItem, FolderRead } from '@/types/api'
 import { GovernedBadge } from '@/components/governance/NodeSelect'
@@ -54,7 +55,9 @@ export default function MediaListView({
 }: Props) {
   const t = useTranslations('media')
   const [hovered, setHovered] = useState<number | null>(null)
-  const folderName = new Map(folders.map((f) => [f.id_folder, f.full_path || f.folder_name]))
+  const { path: folderPath } = useFolderLabel()
+  const foldersById = new Map(folders.map((f) => [f.id_folder, f]))
+  const folderName = new Map(folders.map((f) => [f.id_folder, folderPath(f, foldersById)]))
 
   if (items.length === 0) {
     return <p className="text-sm text-gray-400 text-center py-16">{t('no_media')}</p>

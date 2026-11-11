@@ -549,7 +549,8 @@
     "enc_decision_admin_only": "Au-delà de la limite, seul un administrateur de l'organisation peut lancer l'encodage.",
     "enc_decision_delete_hint": "Rien ne se lance tant que vous n'avez pas choisi. Vous pouvez aussi supprimer ce média.",
     "enc_decision_failed": "La décision n’a pas pu être enregistrée.",
-    "enc_downloading": "Recuperation du fichier"
+    "enc_downloading": "Recuperation du fichier",
+    "system_folder_advertisers": "Annonceurs"
   },
   "iam": {
     "title": "Utilisateurs & Rôles",

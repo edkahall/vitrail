@@ -74,7 +74,7 @@ def generate_voice(
     except httpx.RequestError as exc:
         raise network_error("ElevenLabs", exc) from exc
     if not content:
-        raise GenerationError("réponse ElevenLabs vide")
+        raise GenerationError("empty ElevenLabs response")
     cost = round(len(text) / 1000 * _VOICE_USD_PER_1K_CHARS, 4)
     return content, ctype or "audio/mpeg", cost
 
@@ -101,7 +101,7 @@ def generate_music(
     except httpx.RequestError as exc:
         raise network_error("ElevenLabs", exc) from exc
     if not content:
-        raise GenerationError("réponse ElevenLabs vide")
+        raise GenerationError("empty ElevenLabs response")
     cost = round(length_ms / 60000 * _MUSIC_USD_PER_MIN, 4)
     return content, ctype or "audio/mpeg", cost
 

@@ -52,7 +52,10 @@ from app.schemas.pop import (
 )
 from app.services import analytics, csv_safety, pop_archive, pop_counting, pop_proof, pop_screen
 from app.services.media import download_file, get_signed_url
+from app.services.doc_i18n import tr
+from app.services.pop_report import DOC_TEXTS as POP_TEXTS
 from app.services.pop_report import build_pop_report_pdf
+from app.services.pop_report import csv_header as pop_csv_header
 
 router = APIRouter(prefix="/pop", tags=["proof-of-play"])
 
@@ -182,7 +185,7 @@ async def pop_batch(
             if not pop_proof.verify_signature(effective_key, sig, msg):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="signature de preuve invalide (preuve rejetée)",
+                    detail="invalid proof signature (proof rejected)",
                 )
             signed_count += 1
         else:
@@ -680,18 +683,18 @@ async def pop_plays_csv(
     # cet export est ouvert par un humain dans un tableur, l'en-tête est là pour le guider.
     # (⚠️ Le CSV du connecteur BI, lui, est un contrat MACHINE : on y ajoute en FIN de
     # colonnes, cf. bi_export.)
-    writer.writerow([
-        "Player", "Media", "Diffuse_le_UTC", "Duree_sec", "Signe",
-        "Ecran_coupe", "Zone_recouverte", "Hash_chaine",
-    ])
+    # Langue du profil du demandeur (en-têtes + oui/non) ; défaut anglais.
+    loc = current_user.locale
+    writer.writerow(pop_csv_header(loc))
+    yes, no = tr(POP_TEXTS, loc, "yes"), tr(POP_TEXTS, loc, "no")
     for r in rows:
         writer.writerow([
             _csv_safe(r.player_name), _csv_safe(r.media_name),
             r.played_at.astimezone(timezone.utc).isoformat(),
             round((r.duration_ms or 0) / 1000),
-            "oui" if r.signature else "non",
-            "oui" if r.screen_off else "non",
-            "oui" if r.covered else "non",
+            yes if r.signature else no,
+            yes if r.screen_off else no,
+            yes if r.covered else no,
             _csv_safe(r.merkle_hash),
         ])
     filename = f"proof_of_play_{from_.isoformat()}_{until.isoformat()}.csv"
@@ -800,14 +803,15 @@ async def pop_report_pdf(
         for p in per.values()
     ]
 
+    loc = current_user.locale
     if id_group:
-        scope = f"Groupe #{id_group}"
+        scope = tr(POP_TEXTS, loc, "scope_group", id=id_group)
     elif id_site:
-        scope = f"Site #{id_site}"
+        scope = tr(POP_TEXTS, loc, "scope_site", id=id_site)
     elif player_ids is not None:
-        scope = f"{len(player_ids)} player(s) sélectionné(s)"
+        scope = tr(POP_TEXTS, loc, "scope_selected", n=len(player_ids))
     else:
-        scope = "Tous les players de l'organisation"
+        scope = tr(POP_TEXTS, loc, "scope_all")
 
     report = {
         "org_name": org_name,
@@ -823,7 +827,7 @@ async def pop_report_pdf(
         "scope_label": scope,
         "players": players_report,
     }
-    pdf = build_pop_report_pdf(report)
+    pdf = build_pop_report_pdf(report, locale=loc)
     filename = f"proof_of_play_{from_.isoformat()}_{until.isoformat()}.pdf"
     return Response(
         content=pdf,

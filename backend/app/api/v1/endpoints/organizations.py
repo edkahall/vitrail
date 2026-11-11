@@ -66,7 +66,7 @@ async def create_org(
         select(CmsOrganization).where(CmsOrganization.org_slug == body.org_slug)
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug déjà utilisé")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug already in use")
     org = CmsOrganization(**body.model_dump())
     db.add(org)
     await db.commit()
@@ -98,10 +98,10 @@ async def provision_admin(
         await db.execute(select(CmsOrganization).where(CmsOrganization.id_org == id_org))
     ).scalar_one_or_none()
     if org is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     if (await db.execute(select(CmsUser).where(CmsUser.email == body.email))).scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email déjà utilisé")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
 
     role = (
         await db.execute(select(CmsRole).where(CmsRole.role_key == "CMS_ORG_ADMIN"))
@@ -109,7 +109,7 @@ async def provision_admin(
     if role is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Rôle système CMS_ORG_ADMIN absent (seed IAM)",
+            detail="System role CMS_ORG_ADMIN missing (IAM seed)",
         )
 
     await validate_password_for_org(db, id_org, body.password)
@@ -159,7 +159,7 @@ async def reset_org_admin(
         await db.execute(select(CmsOrganization).where(CmsOrganization.id_org == id_org))
     ).scalar_one_or_none()
     if org is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     user = (
         await db.execute(
@@ -169,7 +169,7 @@ async def reset_org_admin(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Aucun utilisateur avec cet email dans cette organisation",
+            detail="No user with this email in this organization",
         )
 
     await validate_password_for_org(db, id_org, body.password)
@@ -214,14 +214,14 @@ async def get_org(
     role_keys = await rbac.get_user_role_keys(db, current_user.id_user)
     is_super = "CMS_SUPER_ADMIN" in role_keys
     if not is_super and current_user.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     result = await db.execute(
         select(CmsOrganization).where(CmsOrganization.id_org == id_org)
     )
     org = result.scalar_one_or_none()
     if org is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     return OrgRead.model_validate(org)
 
 
@@ -237,31 +237,31 @@ async def update_org(
     )
     org = result.scalar_one_or_none()
     if org is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     if body.ai_quota_period and body.ai_quota_period not in {"weekly", "monthly"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ai_quota_period doit être weekly ou monthly",
+            detail="ai_quota_period must be weekly or monthly",
         )
     if body.ai_quota_unit and body.ai_quota_unit not in {"tokens", "eur"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ai_quota_unit doit être tokens ou eur",
+            detail="ai_quota_unit must be tokens or eur",
         )
     if body.ai_alert_threshold_pct is not None and not (0 <= body.ai_alert_threshold_pct <= 100):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ai_alert_threshold_pct doit être entre 0 et 100",
+            detail="ai_alert_threshold_pct must be between 0 and 100",
         )
     if body.ai_byok_mode and body.ai_byok_mode not in {"strict", "platform"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ai_byok_mode doit être strict ou platform",
+            detail="ai_byok_mode must be strict or platform",
         )
     if body.ai_spend_cap_period and body.ai_spend_cap_period not in spend.PERIODS:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="ai_spend_cap_period doit être day, week ou month",
+            detail="ai_spend_cap_period must be day, week or month",
         )
     # Un plafond NÉGATIF n'a aucun sens et se lirait « aucun plafond » (`_cap` traite ≤ 0
     # ainsi) : on refuse à la saisie plutôt que de laisser croire à une protection posée.
@@ -270,7 +270,7 @@ async def update_org(
         if v is not None and v < 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"{field} ne peut pas être négatif (0 = aucun plafond)",
+                detail=f"{field} cannot be negative (0 = no cap)",
             )
     values = body.model_dump(exclude_none=True)
     if values:
@@ -316,7 +316,7 @@ async def org_deletion_impact(
         select(CmsOrganization).where(CmsOrganization.id_org == id_org)
     )).scalar_one_or_none()
     if org is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     impact = (await admin_refs.organization_impact(db, id_org)).as_dict()
     door = _org_closed_door(id_org, actor)
     impact["closed_reason"] = door
@@ -346,13 +346,13 @@ async def delete_org(
         select(CmsOrganization).where(CmsOrganization.id_org == id_org)
     )).scalar_one_or_none()
     if org is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     door = _org_closed_door(id_org, actor)
     if door == "own_org":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Impossible de supprimer sa propre organisation",
+            detail="You cannot delete your own organization",
         )
 
     impact = await admin_refs.organization_impact(db, id_org)
@@ -361,7 +361,7 @@ async def delete_org(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "org_has_references",
-                "message": "Cette organisation est encore référencée.",
+                "message": "This organization is still referenced.",
                 "blocking": [r.as_dict() for r in impact.blocking],
                 "suspend_available": org.is_active,
             },
@@ -391,13 +391,13 @@ async def get_auth_settings(
     from app.services import rbac as _rbac
     role_keys = await _rbac.get_user_role_keys(db, admin.id_user)
     if "CMS_SUPER_ADMIN" not in role_keys and admin.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
     result = await db.execute(
         select(CmsOrgAuthSettings).where(CmsOrgAuthSettings.id_org == id_org)
     )
     cfg = result.scalar_one_or_none()
     if cfg is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paramètres introuvables")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Settings not found")
     return OrgAuthSettingsRead.model_validate(cfg)
 
 
@@ -411,12 +411,12 @@ async def update_auth_settings(
     from app.services import rbac as _rbac
     role_keys = await _rbac.get_user_role_keys(db, admin.id_user)
     if "CMS_SUPER_ADMIN" not in role_keys and admin.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
     if body.auth_2fa_policy and body.auth_2fa_policy not in {"disabled", "optional", "required"}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="auth_2fa_policy doit être disabled, optional ou required",
+            detail="auth_2fa_policy must be disabled, optional or required",
         )
 
     values = body.model_dump(exclude_none=True)
@@ -494,7 +494,7 @@ async def _assert_same_org_or_super(db: AsyncSession, admin: CmsUser, id_org: in
     from app.services import rbac as _rbac
     role_keys = await _rbac.get_user_role_keys(db, admin.id_user)
     if "CMS_SUPER_ADMIN" not in role_keys and admin.id_org != id_org:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organisation introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
 
 @router.get("/{id_org}/ai-keys", response_model=list[OrgAiCredentialRead])
@@ -523,10 +523,10 @@ async def upsert_ai_key(
     if not vault_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Coffre-fort indisponible (CMS_VAULT_KEY non configurée)",
+            detail="Vault unavailable (CMS_VAULT_KEY not configured)",
         )
     if not body.api_key.strip():
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Clé vide")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Empty key")
     row = await ai_credentials.upsert_org_key(
         db, id_org, body.provider, body.api_key.strip(), created_by=admin.id_user
     )
@@ -554,7 +554,7 @@ async def delete_ai_key(
     await _assert_same_org_or_super(db, admin, id_org)
     deleted = await ai_credentials.delete_org_key(db, id_org, provider)
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clé introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Key not found")
     db.add(CmsAuditLog(
         id_org=id_org,
         id_user=admin.id_user,
@@ -602,22 +602,22 @@ async def read_ai_key_plan(
     if provider != "elevenlabs":
         return OrgAiPlanRead(
             provider=provider, supported=False,
-            detail="Ce fournisseur n'expose pas d'abonnement interrogeable.",
+            detail="This provider does not expose a queryable subscription.",
         )
     if not vault_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Coffre-fort indisponible (CMS_VAULT_KEY non configurée)",
+            detail="Vault unavailable (CMS_VAULT_KEY not configured)",
         )
     row = await ai_credentials.get_org_key_row(db, id_org, provider)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clé introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Key not found")
     try:
         plaintext = decrypt_secret(row.secret_encrypted)
     except VaultDecryptError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Clé illisible (clé de coffre changée ?) — re-saisir la clé",
+            detail="Key unreadable (vault key changed?) — enter the key again",
         ) from None
 
     from app.services.generation import GenerationError, elevenlabs
@@ -629,10 +629,10 @@ async def read_ai_key_plan(
         return OrgAiPlanRead(provider=provider, supported=True, detail=str(exc))
     except Exception:  # noqa: BLE001
         return OrgAiPlanRead(provider=provider, supported=True,
-                             detail="Abonnement illisible pour le moment.")
+                             detail="Subscription unreadable for now.")
     if quota is None:
         return OrgAiPlanRead(provider=provider, supported=True,
-                             detail="Abonnement illisible pour le moment.")
+                             detail="Subscription unreadable for now.")
     return OrgAiPlanRead(
         provider=provider, supported=True, tier=quota.tier, used=quota.used,
         limit=quota.limit, remaining=quota.remaining, resets_at=quota.resets_at,
@@ -651,17 +651,17 @@ async def test_ai_key(
     if not vault_available():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Coffre-fort indisponible (CMS_VAULT_KEY non configurée)",
+            detail="Vault unavailable (CMS_VAULT_KEY not configured)",
         )
     row = await ai_credentials.get_org_key_row(db, id_org, provider)
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clé introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Key not found")
     try:
         plaintext = decrypt_secret(row.secret_encrypted)
     except VaultDecryptError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Clé illisible (clé de coffre changée ?) — re-saisir la clé",
+            detail="Key unreadable (vault key changed?) — enter the key again",
         ) from None
     ok, detail = await ai_credentials.validate_provider_key(provider, plaintext)
     if ok is True:

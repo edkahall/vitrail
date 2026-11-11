@@ -73,7 +73,7 @@ async def _saved_or_404(db: AsyncSession, id_saved: int, id_org: int) -> CmsProm
                                        CmsPromoTemplate.id_org == id_org)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Modèle introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found.")
     return row
 
 
@@ -97,12 +97,12 @@ async def _fetch_safe(url: str, *, accept: str, max_bytes: int) -> tuple[str, by
         for _ in range(4):
             if not url_is_safe(current):
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                    detail="URL non autorisée (hôte interne ou schéma invalide).")
+                                    detail="URL not allowed (internal host or invalid scheme).")
             try:
                 resp = await client.get(current)
             except httpx.HTTPError as exc:
                 raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
-                                    detail=f"Page inaccessible : {exc.__class__.__name__}") from exc
+                                    detail=f"Page unreachable: {exc.__class__.__name__}") from exc
             if resp.status_code in (301, 302, 303, 307, 308):
                 loc = resp.headers.get("location")
                 if not loc:
@@ -111,14 +111,14 @@ async def _fetch_safe(url: str, *, accept: str, max_bytes: int) -> tuple[str, by
                 continue
             if resp.status_code >= 400:
                 raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY,
-                                    detail=f"Page en erreur (HTTP {resp.status_code}).")
+                                    detail=f"Page returned an error (HTTP {resp.status_code}).")
             clen = resp.headers.get("content-length")
             if clen and clen.isdigit() and int(clen) > max_bytes:
                 raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                                    detail="Contenu trop volumineux.")
+                                    detail="Content too large.")
             content = resp.content[:max_bytes]
             return str(resp.url), content, resp.headers.get("content-type", "")
-    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Trop de redirections.")
+    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Too many redirects.")
 
 
 async def _require_fal(db: AsyncSession, id_org: int):
@@ -130,7 +130,7 @@ async def _require_fal(db: AsyncSession, id_org: int):
     if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Aucune clé fal.ai configurée pour cette organisation (Réglages → Clés IA).",
+            detail="No fal.ai key configured for this organization (Settings → AI keys).",
         )
     return resolved
 
@@ -184,7 +184,7 @@ async def promo_saved_create(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CmsPromoTemplate:
     """Enregistre l'état courant de l'éditeur comme modèle réutilisable."""
-    name = (body.name or "").strip()[:120] or "Modèle promo"
+    name = (body.name or "").strip()[:120] or "Promo template"
     row = CmsPromoTemplate(id_org=current_user.id_org, name=name, config=body.config or {},
                            created_by=current_user.id_user)
     db.add(row)
@@ -254,28 +254,28 @@ async def promo_font_upload(
     magic-bytes (woff2/woff/ttf/otf), taille bornée. 1 fichier = (famille, graisse)."""
     if not license_ack:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Attestation de licence requise pour charger une police.")
+                            detail="A license attestation is required to upload a font.")
     fam = (family or "").strip()
     if not (1 <= len(fam) <= 80):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Nom de famille invalide.")
+                            detail="Invalid font family name.")
     # Le nom de famille entre tel quel dans le CSS du composite : on REFUSE les caractères qui
     # permettraient d'en sortir, au lieu de mutiler discrètement ce que l'opérateur a écrit.
     if not fonts.is_safe_family(fam):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Nom de famille invalide : lettres, chiffres, espace, tiret et point seulement.")
+            detail="Invalid font family name: letters, digits, space, hyphen and period only.")
     if not (100 <= int(weight) <= 900):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Graisse invalide (100-900).")
+                            detail="Invalid font weight (100-900).")
     data = await file.read()
     if len(data) > org_fonts.MAX_FONT_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            detail="Fichier de police trop volumineux (max 4 Mo).")
+                            detail="Font file too large (max 4 MB).")
     fmt = org_fonts.detect_format(data)
     if fmt not in org_fonts.ALLOWED_FORMATS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Format non reconnu (woff2/woff/ttf/otf attendu).")
+                            detail="Unrecognized format (woff2/woff/ttf/otf expected).")
 
     existing = (await db.execute(
         select(CmsOrgFont).where(CmsOrgFont.id_org == current_user.id_org,
@@ -314,7 +314,7 @@ async def promo_font_file(
                                  CmsOrgFont.id_org == current_user.id_org)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Police introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Font not found.")
     data = await download_file(row.storage_key)
     return Response(content=data, media_type=f"font/{row.font_format}",
                     headers={"Cache-Control": "private, max-age=3600"})
@@ -332,7 +332,7 @@ async def promo_font_delete(
                                  CmsOrgFont.id_org == current_user.id_org)
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Police introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Font not found.")
     await delete_file(row.storage_key)
     await db.execute(sa_delete(CmsOrgFont).where(CmsOrgFont.id_font == id_font))
     await db.commit()
@@ -364,11 +364,11 @@ async def _validated_kit_fields(db: AsyncSession, id_org: int, body: BrandKitUps
         if not any((e or {}).get("family") == family for e in catalog.values()):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Police inconnue du catalogue de l'organisation : {family}")
+                detail=f"Font not in the organization's catalog: {family}")
         if not fonts.is_safe_family(family):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Nom de police invalide.")
+                detail="Invalid font name.")
     data["font_family"] = family
     if data.get("id_logo_media") is not None:
         logo = (await db.execute(
@@ -377,7 +377,7 @@ async def _validated_kit_fields(db: AsyncSession, id_org: int, body: BrandKitUps
                                    CmsMedia.is_deleted.is_(False))
         )).scalar_one_or_none()
         if logo is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo introuvable.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found.")
     return data
 
 
@@ -409,7 +409,7 @@ async def _advertiser_or_404(db: AsyncSession, id_advertiser: int, id_org: int) 
                                     CmsAdvertiser.id_org == id_org)
     )).scalar_one_or_none()
     if row is None:  # 404 et jamais 403 : on ne révèle pas l'existence d'un annonceur voisin
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Annonceur introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Advertiser not found.")
     return row
 
 
@@ -514,7 +514,7 @@ async def _delete_kit(db: AsyncSession, user: CmsUser, id_advertiser: int | None
         )
     )).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Charte introuvable.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand kit not found.")
     kit_name, id_kit = row.kit_name, row.id_brand_kit
     await db.execute(sa_delete(CmsBrandKit).where(CmsBrandKit.id_brand_kit == id_kit))
     # Le nom survit à la ligne supprimée — sans lui le journal ne dit pas ce qui a disparu.
@@ -648,7 +648,7 @@ async def promo_cutout(
     )).scalar_one_or_none()
     if source is None or not source.storage_key:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="image source introuvable")
+                            detail="source image not found")
 
     # Cache : un détourage déjà produit pour cette source (par checksum) est réutilisé.
     if source.checksum_sha256:
@@ -680,11 +680,11 @@ async def promo_cutout(
         await spend.settle(db, id_spend, None)   # dans le doute, on compte
         await db.commit()
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Détourage échoué : {exc}"
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Background removal failed: {exc}"
         ) from exc
     await spend.settle(db, id_spend, img.cost_usd)
 
-    name = (f"{source.media_name} (détouré)" if source.media_name else "Produit détouré")[:120]
+    name = (f"{source.media_name} (background removed)" if source.media_name else "Product (background removed)")[:120]
     storage_key = make_storage_key(id_org, f"{name}.png")
     await upload_file(img.content, storage_key, img.content_type)
     media = CmsMedia(
@@ -742,11 +742,11 @@ async def promo_background(
         await spend.settle(db, id_spend, None)   # dans le doute, on compte
         await db.commit()
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Génération du fond échouée : {exc}"
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Background generation failed: {exc}"
         ) from exc
     await spend.settle(db, id_spend, img.cost_usd)
 
-    name = ((body.name or "").strip() or "Fond promo IA")[:120]
+    name = ((body.name or "").strip() or "AI promo background")[:120]
     ext = (img.content_type.split("/")[-1] or "jpg").replace("jpeg", "jpg")
     storage_key = make_storage_key(id_org, f"{name}.{ext}")
     await upload_file(img.content, storage_key, img.content_type)
@@ -781,7 +781,7 @@ async def promo_extract_url(
     (§8 : jamais un crawl de masse ; il valide les données et assume les droits image)."""
     if not url_is_safe(body.url):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="URL invalide ou non autorisée.")
+                            detail="Invalid or disallowed URL.")
     final_url, content, _ct = await _fetch_safe(
         body.url, accept="text/html", max_bytes=2 * 1024 * 1024)
     html = content.decode("utf-8", errors="replace")
@@ -798,15 +798,15 @@ async def promo_import_image(
     utilisable comme produit. L'utilisateur assume les droits (§8)."""
     if not url_is_safe(body.url):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="URL invalide ou non autorisée.")
+                            detail="Invalid or disallowed URL.")
     _final, content, content_type = await _fetch_safe(
         body.url, accept="image/*", max_bytes=_MAX_IMAGE_BYTES)
     ctype = (content_type or "").split(";")[0].strip().lower()
     if not ctype.startswith("image/") or not content:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="L'URL ne pointe pas vers une image.")
+                            detail="The URL does not point to an image.")
 
-    name = ((body.name or "").strip() or "Image importée")[:120]
+    name = ((body.name or "").strip() or "Imported image")[:120]
     ext = (ctype.split("/")[-1] or "jpg").replace("jpeg", "jpg")
     storage_key = make_storage_key(current_user.id_org, f"{name}.{ext}")
     await upload_file(content, storage_key, ctype)

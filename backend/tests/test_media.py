@@ -724,7 +724,7 @@ async def test_background_removal_edit_no_prompt(
     assert resp.status_code == 201, resp.text
     data = resp.json()
     assert data["source"] == "generated_ai"
-    assert data["media_name"] == "Image éditée"
+    assert data["media_name"] == "Edited image"
 
 
 @pytest.mark.asyncio

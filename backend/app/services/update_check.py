@@ -91,7 +91,7 @@ async def _fetch_manifest() -> dict[str, Any] | None:
             resp.raise_for_status()
             data = resp.json()
         if not isinstance(data, dict):
-            raise ValueError("manifeste racine non-objet")
+            raise ValueError("manifest root is not an object")
     except Exception as exc:  # noqa: BLE001 — best-effort, jamais bloquant
         logger.info("update_check: manifeste indisponible (%s)", exc)
         # On garde le dernier bon manifeste s'il existe (réseau transitoire).

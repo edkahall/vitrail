@@ -44,14 +44,12 @@ async def _deliver(db, sched: CmsReportSchedule, tz: ZoneInfo) -> str:
     status, detail = "sent", None
     try:
         if not recipients:
-            raise email_delivery.EmailError("aucun destinataire configuré")
+            raise email_delivery.EmailError("no recipient configured")
+        # Langue du document = profil du créateur de la planification (absent → anglais).
+        locale = await report_render.user_locale(db, sched.created_by)
         pdf, org_name = await report_render.render_executive_pdf(
-            db, sched.id_org, from_d, until, tz, with_roi=sched.include_roi)
-        subject = f"{org_name} — Rapport exécutif ({from_d} → {until})"
-        body = (f"Bonjour,\n\nVeuillez trouver ci-joint le rapport exécutif Vitrail de "
-                f"{org_name} pour la période du {from_d} au {until}.\n\n"
-                f"Ce rapport est généré automatiquement.\n\n— Vitrail")
-        fname = f"rapport_executif_{from_d}_{until}.pdf"
+            db, sched.id_org, from_d, until, tz, with_roi=sched.include_roi, locale=locale)
+        subject, body, fname = report_render.executive_email(org_name, from_d, until, locale)
         email_delivery.send_email(
             to=recipients, subject=subject, body=body,
             attachments=[(fname, pdf, "pdf")])

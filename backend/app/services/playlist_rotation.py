@@ -193,7 +193,7 @@ async def validate_child_for_nesting(
     enfant existant même org, pas d'auto-référence, l'enfant ne contient pas lui-même de
     sous-playlist, et le parent n'est pas déjà référencé comme enfant ailleurs."""
     if id_child == id_parent:
-        raise ValueError("Une playlist ne peut pas s'imbriquer elle-même")
+        raise ValueError("A playlist cannot be nested inside itself")
     child = (await db.execute(
         select(CmsPlaylist).where(
             CmsPlaylist.id_playlist == id_child,
@@ -202,7 +202,7 @@ async def validate_child_for_nesting(
         )
     )).scalar_one_or_none()
     if child is None:
-        raise ValueError("Sous-playlist introuvable")
+        raise ValueError("Sub-playlist not found")
     has_nested = (await db.execute(
         select(CmsPlaylistItem.id_item).where(
             CmsPlaylistItem.id_playlist == id_child,
@@ -211,7 +211,7 @@ async def validate_child_for_nesting(
     )).scalar_one_or_none()
     if has_nested is not None:
         raise ValueError(
-            "Cette playlist contient déjà des sous-playlists (1 seul niveau d'imbrication)")
+            "This playlist already contains sub-playlists (only one nesting level)")
     parent_is_child = (await db.execute(
         select(CmsPlaylistItem.id_item).where(
             CmsPlaylistItem.id_child_playlist == id_parent,
@@ -219,5 +219,5 @@ async def validate_child_for_nesting(
     )).scalar_one_or_none()
     if parent_is_child is not None:
         raise ValueError(
-            "Cette playlist est elle-même utilisée comme sous-playlist (1 seul niveau)")
+            "This playlist is itself used as a sub-playlist (only one level)")
     return child

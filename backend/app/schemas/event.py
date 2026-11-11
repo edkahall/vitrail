@@ -30,34 +30,34 @@ def _check_target_config(tc: dict) -> None:
             # Les deux formes dans le même document : impossible de savoir laquelle fait
             # foi — refuser l'ambiguïté plutôt que d'en préférer une en silence.
             raise ValueError(
-                "target_config ambigu : 'targets' et 'target_type' sont exclusifs"
+                "ambiguous target_config: 'targets' and 'target_type' are mutually exclusive"
             )
         entries = tc.get("targets")
         if not isinstance(entries, list) or not entries:
-            raise ValueError("target_config.targets doit être une liste non vide")
+            raise ValueError("target_config.targets must be a non-empty list")
         for entry in entries:
             if not isinstance(entry, dict):
-                raise ValueError("target_config.targets : chaque entrée est un objet")
+                raise ValueError("target_config.targets: each entry must be an object")
             e_type = entry.get("target_type", "player")
             if e_type not in EVENT_MULTI_TARGET_TYPES:
                 raise ValueError(
-                    f"target_type invalide dans targets : {e_type!r} "
-                    f"(attendu : {', '.join(sorted(EVENT_MULTI_TARGET_TYPES))} ; "
-                    "'org' s'exprime par la forme target_type seule)"
+                    f"invalid target_type in targets: {e_type!r} "
+                    f"(expected: {', '.join(sorted(EVENT_MULTI_TARGET_TYPES))}; "
+                    "'org' is expressed with the target_type-only form)"
                 )
             ids = entry.get("target_ids")
             if not isinstance(ids, list) or not ids:
                 # Une entrée sans identifiant ne vise personne : dans un mélange, c'est
                 # forcément un geste raté — le nommer plutôt que de l'avaler.
                 raise ValueError(
-                    f"target_config.targets : l'entrée {e_type!r} n'a aucun target_ids"
+                    f"target_config.targets: entry {e_type!r} has no target_ids"
                 )
         return
     t_type = tc.get("target_type", "player")
     if t_type not in EVENT_TARGET_TYPES:
         raise ValueError(
-            f"target_type invalide : {t_type!r} "
-            f"(attendu : {', '.join(sorted(EVENT_TARGET_TYPES))})"
+            f"invalid target_type: {t_type!r} "
+            f"(expected: {', '.join(sorted(EVENT_TARGET_TYPES))})"
         )
 
 
@@ -103,9 +103,9 @@ class EventCreate(BaseModel):
     def check_target(self) -> "EventCreate":
         if self.event_kind == "audio":
             if self.id_basket is None:
-                raise ValueError("id_basket est obligatoire pour un event audio")
+                raise ValueError("id_basket is required for an audio event")
         elif self.id_playlist is None and self.id_media is None:
-            raise ValueError("id_playlist ou id_media est obligatoire")
+            raise ValueError("id_playlist or id_media is required")
         _check_target_config(self.target_config or {})
         return self
 

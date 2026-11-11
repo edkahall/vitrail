@@ -2125,7 +2125,7 @@ def download_remote_media(self, id_media: int) -> None:
             conn.commit()
 
         if not url_is_safe(url, schemes=("http", "https")):
-            _fail("URL non autorisée (schéma/hôte)")
+            _fail("URL not allowed (scheme/host)")
             return
 
         try:
@@ -2140,13 +2140,13 @@ def download_remote_media(self, id_media: int) -> None:
                         return
                     ct = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
                     if ct and not any(ct.startswith(p) for p in _DOWNLOAD_CT_PREFIXES):
-                        _fail(f"Content-type {ct} refusé")
+                        _fail(f"Content-type {ct} rejected")
                         return
                     total = 0
                     for chunk in resp.iter_bytes(1024 * 1024):
                         total += len(chunk)
                         if total > _DOWNLOAD_MAX_BYTES:
-                            _fail(f"Fichier > {_DOWNLOAD_MAX_BYTES // (1024 * 1024)} MiB")
+                            _fail(f"File > {_DOWNLOAD_MAX_BYTES // (1024 * 1024)} MiB")
                             return
                         digest.update(chunk)
                         buf.write(chunk)
@@ -2154,12 +2154,12 @@ def download_remote_media(self, id_media: int) -> None:
             # Erreur réseau transitoire → retry (2×) puis échec définitif
             if self.request.retries < self.max_retries:
                 raise self.retry(exc=exc, countdown=60)
-            _fail(f"Téléchargement impossible : {exc}")
+            _fail(f"Download failed: {exc}")
             return
 
         content = buf.getvalue()
         if not content:
-            _fail("Fichier vide")
+            _fail("Empty file")
             return
         s3 = _s3()
         s3.put_object(Bucket=settings.MINIO_BUCKET_MEDIA, Key=storage_key, Body=content,

@@ -30,6 +30,7 @@ import MediaFilters, {
   EMPTY_FILTERS, applyFilters, countActive, type FilterState,
 } from './components/MediaFilters'
 import { useCollapse } from '@/lib/useCollapse'
+import { useFolderLabel } from '@/lib/folderLabel'
 import { TagPicker, useTagNamespaces } from '@/components/tags/TagControls'
 import type { AffectedPlaylist, FolderRead, MediaEmbargoResult, MediaListItem, MediaRead } from '@/types/api'
 
@@ -101,6 +102,8 @@ export default function MediaPage() {
     queryKey: ['media-folders'],
     queryFn: () => api.get<FolderRead[]>('/media/folders').then((r) => r.data),
   })
+  const { label: folderLabel, path: folderPath } = useFolderLabel()
+  const foldersById = useMemo(() => new Map(folders.map((f) => [f.id_folder, f])), [folders])
   const moveMutation = useMutation({
     mutationFn: (id_folder: number | null) =>
       api.post('/media/folders/move-media', { id_media: [...selectedIds], id_folder }),
@@ -964,9 +967,9 @@ export default function MediaPage() {
             >
               <Folder className="w-4 h-4 shrink-0 mt-0.5 text-gray-400" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{f.folder_name}</span>
+                <span className="block truncate">{folderLabel(f)}</span>
                 {f.parent_id !== null && (
-                  <span className="block truncate text-[11px] text-gray-500">{f.full_path}</span>
+                  <span className="block truncate text-[11px] text-gray-500">{folderPath(f, foldersById)}</span>
                 )}
               </span>
               {f.media_count > 0 && (

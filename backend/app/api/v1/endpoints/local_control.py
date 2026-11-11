@@ -37,7 +37,7 @@ async def _get_player_or_404(db: AsyncSession, id_player: int, id_org: int) -> C
         )
     )).scalar_one_or_none()
     if player is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player introuvable")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     return player
 
 

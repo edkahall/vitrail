@@ -33,15 +33,15 @@ def check_password(password: str, min_len: int, policy: dict) -> list[str]:
     effective_min = max(_ABSOLUTE_MIN_LEN, int(min_len or 0))
     missing: list[str] = []
     if len(password) < effective_min:
-        missing.append(f"au moins {effective_min} caractères")
+        missing.append(f"at least {effective_min} characters")
     if policy.get("uppercase") and not any(c.isupper() for c in password):
-        missing.append("une lettre majuscule")
+        missing.append("an uppercase letter")
     if policy.get("lowercase") and not any(c.islower() for c in password):
-        missing.append("une lettre minuscule")
+        missing.append("a lowercase letter")
     if policy.get("digit") and not any(c.isdigit() for c in password):
-        missing.append("un chiffre")
+        missing.append("a digit")
     if policy.get("special") and not any(not c.isalnum() for c in password):
-        missing.append("un caractère spécial")
+        missing.append("a special character")
     return missing
 
 
@@ -59,5 +59,5 @@ async def validate_password_for_org(db: AsyncSession, id_org: int, password: str
     if missing:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Mot de passe trop faible : il doit contenir " + ", ".join(missing) + ".",
+            detail="Password too weak: it must contain " + ", ".join(missing) + ".",
         )

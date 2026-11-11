@@ -63,7 +63,7 @@ def _drop_unsupported_negative(payload: dict, model_spec: dict) -> None:
 def _require_fal_model(model: str, kind: str) -> dict:
     m = catalog.get_model(model)
     if m is None or m["kind"] != kind or m["provider"] != "fal":
-        raise GenerationError(f"modèle {kind} fal inconnu : {model}")
+        raise GenerationError(f"unknown fal {kind} model: {model}")
     return m
 
 
@@ -74,7 +74,7 @@ def _inject_refs(payload: dict, model_spec: dict, image_urls: list[str] | None) 
     if not ref_field:
         return
     if not image_urls:
-        raise GenerationError("ce modèle exige au moins une image de référence")
+        raise GenerationError("this model requires at least one reference image")
     payload[ref_field] = image_urls if model_spec.get("ref_multi") else image_urls[0]
 
 
@@ -99,7 +99,7 @@ def _extract_image(data: dict) -> dict:
     if not images and isinstance(data.get("image"), dict):
         images = [data["image"]]
     if not images or not images[0].get("url"):
-        raise GenerationError("réponse fal sans image")
+        raise GenerationError("fal response has no image")
     return images[0]
 
 
@@ -143,7 +143,7 @@ async def generate_image(
         async with httpx.AsyncClient(timeout=timeout) as http:
             resp = await http.post(f"{FAL_BASE}/{model}", headers=headers, json=payload)
             if resp.status_code in (401, 403):
-                raise GenerationError("clé fal.ai refusée (401/403)")
+                raise GenerationError("fal.ai key rejected (401/403)")
             resp.raise_for_status()
             data = resp.json()
             img = _extract_image(data)
@@ -154,10 +154,10 @@ async def generate_image(
             ctype = ctype.split(";")[0].strip()
     except httpx.HTTPStatusError as exc:
         raise GenerationError(
-            f"erreur fal {exc.response.status_code} : {exc.response.text[:200]}"
+            f"fal error {exc.response.status_code}: {exc.response.text[:200]}"
         ) from exc
     except httpx.HTTPError as exc:
-        raise GenerationError(f"erreur réseau fal : {exc.__class__.__name__}") from exc
+        raise GenerationError(f"fal network error: {exc.__class__.__name__}") from exc
 
     cost = catalog.estimate_cost(
         model, params={**p, "aspect_ratio": aspect_ratio}, aspect_ratio=aspect_ratio
@@ -192,7 +192,7 @@ def generate_image_sync(
         with httpx.Client(timeout=timeout) as http:
             resp = http.post(f"{FAL_BASE}/{model}", headers=headers, json=payload)
             if resp.status_code in (401, 403):
-                raise GenerationError("clé fal.ai refusée (401/403)")
+                raise GenerationError("fal.ai key rejected (401/403)")
             resp.raise_for_status()
             data = resp.json()
             img = _extract_image(data)
@@ -203,10 +203,10 @@ def generate_image_sync(
             ctype = ctype.split(";")[0].strip()
     except httpx.HTTPStatusError as exc:
         raise GenerationError(
-            f"erreur fal {exc.response.status_code} : {exc.response.text[:200]}"
+            f"fal error {exc.response.status_code}: {exc.response.text[:200]}"
         ) from exc
     except httpx.HTTPError as exc:
-        raise GenerationError(f"erreur réseau fal : {exc.__class__.__name__}") from exc
+        raise GenerationError(f"fal network error: {exc.__class__.__name__}") from exc
     cost = catalog.estimate_cost(
         model, params={**p, "aspect_ratio": aspect_ratio}, aspect_ratio=aspect_ratio
     )
@@ -240,12 +240,12 @@ def _run_queue(model: str, payload: dict, api_key: str, *, kind: str,
         with httpx.Client(timeout=60.0) as http:
             sub = http.post(f"{FAL_QUEUE}/{model}", headers=headers, json=payload)
             if sub.status_code in (401, 403):
-                raise GenerationError("clé fal.ai refusée (401/403)")
+                raise GenerationError("fal.ai key rejected (401/403)")
             sub.raise_for_status()
             j = sub.json()
             status_url, response_url = j.get("status_url"), j.get("response_url")
             if not status_url or not response_url:
-                raise GenerationError("réponse file fal inattendue")
+                raise GenerationError("unexpected fal queue response")
             waited = 0.0
             while True:
                 st = http.get(status_url, headers=headers)
@@ -254,9 +254,9 @@ def _run_queue(model: str, payload: dict, api_key: str, *, kind: str,
                 if status == "COMPLETED":
                     break
                 if status in ("FAILED", "ERROR", "CANCELLED"):
-                    raise GenerationError(f"génération fal {status}")
+                    raise GenerationError(f"fal generation {status}")
                 if waited >= max_wait:
-                    raise GenerationError(f"délai de génération {kind} dépassé")
+                    raise GenerationError(f"{kind} generation timed out")
                 time.sleep(poll_interval)
                 waited += poll_interval
             res = http.get(response_url, headers=headers)
@@ -264,17 +264,17 @@ def _run_queue(model: str, payload: dict, api_key: str, *, kind: str,
             data = res.json()
             url = _media_url(data, "video", "videos", "audio", "audio_url", "audio_file", "output")
             if not url:
-                raise GenerationError(f"réponse fal sans {kind}")
+                raise GenerationError(f"fal response has no {kind}")
             dl = http.get(url, timeout=dl_timeout)
             dl.raise_for_status()
             content = dl.content
             ctype = dl.headers.get("content-type", default_ctype).split(";")[0].strip()
     except httpx.HTTPStatusError as exc:
         raise GenerationError(
-            f"erreur fal {exc.response.status_code} : {exc.response.text[:200]}"
+            f"fal error {exc.response.status_code}: {exc.response.text[:200]}"
         ) from exc
     except httpx.HTTPError as exc:
-        raise GenerationError(f"erreur réseau fal : {exc.__class__.__name__}") from exc
+        raise GenerationError(f"fal network error: {exc.__class__.__name__}") from exc
     return content, ctype or default_ctype, data
 
 

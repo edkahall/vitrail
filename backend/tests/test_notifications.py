@@ -146,9 +146,9 @@ async def test_email_channel(client: AsyncClient, admin_token: str) -> None:
                                        "id_channel": id_channel})
         assert rule.status_code == 201
         ok, detail = notif_svc.deliver_to_channel(
-            "email", {"recipients": ["ops@example.com"]}, "player_offline",
+            "email", {"recipients": ["ops@example.com"], "locale": "fr"}, "player_offline",
             *notif_svc.build_message("player_offline",
-                                     {"player_name": "NUC", "offline_min": 5}),
+                                     {"player_name": "NUC", "offline_min": 5}, locale="fr"),
             {})
         assert ok and "1 destinataire" in detail
         assert "NUC" in sent[-1]["subject"]

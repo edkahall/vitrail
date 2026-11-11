@@ -284,9 +284,10 @@ def test_roi_estimate():
     assert r2["impressions"] == 90000
 
 
-async def _admin_token(db_session: AsyncSession, org: CmsOrganization) -> str:
+async def _admin_token(db_session: AsyncSession, org: CmsOrganization,
+                       locale: str = "en") -> str:
     user = CmsUser(id_org=org.id_org, email=f"adm-{uuid.uuid4().hex[:8]}@t.com",
-                   password_hash=hash_password("Password1!"), is_active=True)
+                   password_hash=hash_password("Password1!"), is_active=True, locale=locale)
     db_session.add(user)
     await db_session.flush()
     # CMS_SUPER_ADMIN : bypass RBAC (require_permission) + accepté par require_org_admin.
@@ -510,3 +511,118 @@ async def test_bi_keys_and_exports(
     assert r.status_code == 204
     assert (await client.get(
         f"/api/v1/analytics/export/pop.csv?api_key={raw}")).status_code == 401
+
+
+# ── Langue du rapport exécutif (profil du destinataire, défaut anglais) ────────
+
+_EXEC_PAYLOAD = {
+    "from_date": "2026-10-01", "until_date": "2026-10-31", "health_score": 90,
+    "uptime_pct": 99.5, "conformity_pct": 97.0, "alerts_active": 1,
+    "plays_count": 12345, "play_seconds": 7200,
+    "fleet": {"online": 3, "warning": 1, "offline": 0, "maintenance": 0, "total": 4},
+    "top_content": [{"media_name": "Promo", "id_media": 1, "plays": 4321, "seconds": 600}],
+}
+_EXEC_ROI = {"impressions": 90000, "network_value_eur": 1450.0, "paper_savings_eur": 600.0,
+             "total_roi_eur": 2050.0, "screens": 4, "hours_per_day": 12.5,
+             "contacts_per_hour": 50.0, "cpm_eur": 5.0, "paper_eur_per_month": 50.0,
+             "uptime_pct": 99.5}
+
+
+def _exec_pdf(monkeypatch, **kw) -> bytes:
+    from reportlab import rl_config
+
+    from app.services.report_pdf import build_executive_pdf
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    return build_executive_pdf(org_name="Org", payload=_EXEC_PAYLOAD, branding={},
+                               roi=_EXEC_ROI, **kw)
+
+
+def test_executive_pdf_default_english(monkeypatch) -> None:
+    en = _exec_pdf(monkeypatch)
+    assert b"Key indicators" in en and b"Fleet status" in en and b"Executive report" in en
+    assert b"12,345" in en and b"2026-10-01" in en
+    assert b"Indicateurs cl" not in en
+
+
+def test_executive_pdf_german_and_french(monkeypatch) -> None:
+    de = _exec_pdf(monkeypatch, locale="de")
+    assert b"Kennzahlen" in de and b"Flottenstatus" in de and b"Management-Bericht" in de
+    assert b"12.345" in de and b"01.10.2026" in de
+    assert b"Key indicators" not in de
+    fr = _exec_pdf(monkeypatch, locale="fr-FR")
+    assert b"Indicateurs cl" in fr and b"Statut de la flotte" in fr and b"01/10/2026" in fr
+
+
+def test_executive_email_texts_follow_locale() -> None:
+    from datetime import date
+
+    from app.services.report_render import executive_email, pdf_filename
+    f, u = date(2026, 10, 1), date(2026, 10, 31)
+    subj, body, fname = executive_email("Org", f, u, None)
+    assert "Executive report" in subj and body.startswith("Hello,")
+    assert fname == "executive_report_2026-10-01_2026-10-31.pdf"
+    subj, body, fname = executive_email("Org", f, u, "fr")
+    assert "Rapport exécutif" in subj and body.startswith("Bonjour,") and "01/10/2026" in body
+    assert fname == "rapport_executif_2026-10-01_2026-10-31.pdf"
+    subj, body, _ = executive_email("Org", f, u, "de", test=True)
+    assert "Management-Bericht" in subj and "01.10.2026" in body
+    for loc in ("en", "fr", "es", "pt", "de"):
+        assert pdf_filename(f, u, loc).isascii()
+
+
+async def test_executive_pdf_download_in_requester_language(
+    client: AsyncClient, db_session: AsyncSession, org: CmsOrganization
+) -> None:
+    for loc, prefix in (("en", "executive_report_"), ("de", "management_bericht_"),
+                        ("fr", "rapport_executif_")):
+        token = await _admin_token(db_session, org, locale=loc)
+        r = await client.get("/api/v1/analytics/executive/report.pdf",
+                             headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200, r.text
+        assert f'filename="{prefix}' in r.headers["content-disposition"], loc
+
+
+async def test_scheduled_report_uses_creator_language(
+    db_session: AsyncSession, org: CmsOrganization, monkeypatch
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    from app.models.report import CmsReportSchedule
+    from app.services import email_delivery, report_render
+    from app.workers import report_worker
+
+    creator = CmsUser(id_org=org.id_org, email=f"cr-{uuid.uuid4().hex[:8]}@t.com",
+                      password_hash=hash_password("Password1!"), is_active=True, locale="de")
+    db_session.add(creator)
+    await db_session.flush()
+
+    seen: dict = {}
+    real_render = report_render.render_executive_pdf
+
+    async def _render(*a, **kw):
+        seen["render_locale"] = kw.get("locale")
+        return await real_render(*a, **kw)
+
+    def _send(*, to, subject, body, attachments):
+        seen.update(subject=subject, body=body, fname=attachments[0][0])
+
+    monkeypatch.setattr(report_render, "render_executive_pdf", _render)
+    monkeypatch.setattr(email_delivery, "send_email", _send)
+
+    tz = ZoneInfo("UTC")
+    sched = CmsReportSchedule(id_org=org.id_org, recipients=["dir@example.com"],
+                              period_days=7, frequency="weekly", send_hour=7, send_dow=0,
+                              send_dom=1, include_roi=True, created_by=creator.id_user)
+    db_session.add(sched)
+    await db_session.flush()
+    assert await report_worker._deliver(db_session, sched, tz) == "sent"
+    assert seen["render_locale"] == "de"
+    assert "Management-Bericht" in seen["subject"] and seen["body"].startswith("Guten Tag")
+    assert seen["fname"].startswith("management_bericht_")
+
+    # créateur inconnu (compte supprimé → created_by NULL) → anglais
+    sched.created_by = None
+    assert await report_worker._deliver(db_session, sched, tz) == "sent"
+    assert seen["render_locale"] is None
+    assert "Executive report" in seen["subject"]
+    assert seen["fname"].startswith("executive_report_")

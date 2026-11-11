@@ -301,7 +301,7 @@ async def _validate_event_node(db: AsyncSession, user: CmsUser, id_node: int | N
     )).scalar_one_or_none()
     if ok is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Nœud de gouvernance introuvable")
+                            detail="Governance node not found")
 
 
 async def _get_visible_event(
@@ -361,7 +361,7 @@ async def _validate_event_targets(
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Cible introuvable dans l'organisation ({t_type}) : {missing}",
+                detail=f"Target not found in the organization ({t_type}): {missing}",
             )
 
 
@@ -381,7 +381,7 @@ async def _validate_event_content(
         ))).scalar_one_or_none()
         if ok is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Playlist introuvable")
+                                detail="Playlist not found")
     if id_media:
         ok = (await db.execute(select(CmsMedia.id_media).where(
             CmsMedia.id_media == id_media,
@@ -390,7 +390,7 @@ async def _validate_event_content(
         ))).scalar_one_or_none()
         if ok is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                                detail="Média introuvable")
+                                detail="Media not found")
 
 
 async def _enforce_event_targets_in_scope(
@@ -419,8 +419,8 @@ async def _enforce_event_targets_in_scope(
         if t_type == "org":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Un événement rattaché au nœud « {node.node_name} » ne peut pas viser "
-                       "toute l'organisation : choisissez des écrans de son périmètre.",
+                detail=f"An event attached to node \"{node.node_name}\" cannot target "
+                       "the whole organization: choose players within its scope.",
             )
         pairs.extend((t_type, tid) for tid in t_ids)
     bad = await out_of_scope_targets(db, id_org, node, pairs)
@@ -428,7 +428,7 @@ async def _enforce_event_targets_in_scope(
         names = ", ".join(b["target_name"] or f"#{b['target_id']}" for b in bad)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Cible hors du périmètre du nœud « {node.node_name} » : {names}.",
+            detail=f"Target outside the scope of node \"{node.node_name}\": {names}.",
         )
 
 
@@ -440,7 +440,7 @@ async def list_events(
     kind: str | None = None,
     target_type: str | None = Query(
         None, pattern="^(player|player_group|group|site|site_group)$",
-        description="Filtre cible : ne garder que les events touchant cette cible",
+        description="Target filter: keep only events that reach this target",
     ),
     target_id: int | None = Query(None),
 ) -> list[EventRead]:
@@ -511,10 +511,10 @@ async def create_event(
             )
         )).scalar_one_or_none()
         if basket is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Panier introuvable")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Audio basket not found")
 
     await _validate_event_node(db, current_user, body.id_governance_node)
-    await assert_can_edit_node(db, current_user, body.id_governance_node, "cet événement")
+    await assert_can_edit_node(db, current_user, body.id_governance_node, "this event")
     await _validate_event_targets(db, current_user.id_org, body.target_config)
     if body.event_kind == "content":
         await _validate_event_content(db, current_user.id_org, body.id_playlist, body.id_media)
@@ -582,14 +582,14 @@ async def update_event(
 
     # Gouvernance §XVIII phase 4 : éditer exige d'administrer le nœud ACTUEL, puis le nœud
     # CIBLE en cas de déplacement ; détacher est réservé à un nœud PARENT (N2).
-    await assert_can_edit_node(db, current_user, event.id_governance_node, "cet événement")
+    await assert_can_edit_node(db, current_user, event.id_governance_node, "this event")
     if "id_governance_node" in body.model_fields_set:
         await _validate_event_node(db, current_user, body.id_governance_node)
         await assert_can_edit_node(db, current_user, body.id_governance_node,
-                                   "le nœud de destination")
+                                   "the destination node")
         if body.id_governance_node is None:
             await assert_can_detach(db, current_user, event.id_governance_node,
-                                    "cet événement")
+                                    "this event")
     node_after = (body.id_governance_node if "id_governance_node" in body.model_fields_set
                   else event.id_governance_node)
     targets_after = (body.target_config if "target_config" in body.model_fields_set
@@ -637,7 +637,7 @@ async def delete_event(
     _: Annotated[None, Depends(require_permission("events", "delete"))],
 ) -> None:
     event = await _get_visible_event(db, current_user, id_event)
-    await assert_can_edit_node(db, current_user, event.id_governance_node, "cet événement")
+    await assert_can_edit_node(db, current_user, event.id_governance_node, "this event")
 
     if event.status not in ("inactive", "cancelled", "completed"):
         raise HTTPException(
@@ -677,7 +677,7 @@ async def activate_event(
     # trois transitions (activer / rendre la main / annuler) n'avaient AUCUNE garde de
     # nœud, alors que créer, modifier et supprimer en ont une depuis la phase 4 — donc
     # `events:trigger` suffisait à diffuser dans un périmètre qu'on n'administre pas.
-    await assert_can_edit_node(db, current_user, event.id_governance_node, "cet événement")
+    await assert_can_edit_node(db, current_user, event.id_governance_node, "this event")
 
     if event.status not in ("inactive", "reverting", "completed"):
         raise HTTPException(
@@ -701,7 +701,7 @@ async def activate_event(
     if event.not_before_utc and now_utc < event.not_before_utc:
         raise HTTPException(
             status_code=400,
-            detail=f"Embargo actif : diffusion autorisée à partir du {event.not_before_utc.isoformat()}",
+            detail=f"Embargo active: playback allowed from {event.not_before_utc.isoformat()}",
         )
     db.add(_audit(current_user, "activate", event))
     event.status = "active"
@@ -736,7 +736,7 @@ async def deactivate_event(
     finalize_reverting_events (→ completed, ou inactive si récurrent encore valide).
     """
     event = await _get_visible_event(db, current_user, id_event)
-    await assert_can_edit_node(db, current_user, event.id_governance_node, "cet événement")
+    await assert_can_edit_node(db, current_user, event.id_governance_node, "this event")
 
     if event.status != "active":
         raise HTTPException(
@@ -765,7 +765,7 @@ async def cancel_event(
 ) -> EventRead:
     """Annule définitivement un event depuis n'importe quel état."""
     event = await _get_visible_event(db, current_user, id_event)
-    await assert_can_edit_node(db, current_user, event.id_governance_node, "cet événement")
+    await assert_can_edit_node(db, current_user, event.id_governance_node, "this event")
 
     db.add(_audit(current_user, "cancel", event, {"status_avant": event.status}))
     event.status = "cancelled"

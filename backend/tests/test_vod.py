@@ -198,7 +198,7 @@ async def test_create_vod_rejects_audio_media(client, db_session, org, auth):
     r = await client.post("/api/v1/vod", headers=_h(auth), json={
         "vod_name": "X", "id_medias": [aud.id_media], "id_players": [p.id_player]})
     assert r.status_code == 400
-    assert "visuel" in r.json()["detail"].lower()
+    assert "visual" in r.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

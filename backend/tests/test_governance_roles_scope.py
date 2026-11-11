@@ -390,7 +390,7 @@ async def test_n5_no_self_approval_and_parent_scope(
     await _grant(db_session, scene["org"], prog, "CMS_GOVERNANCE_APPROVER")
     r = await client.post(f"/api/v1/approvals/{req_id}/approve", json={}, headers=_h(prog))
     assert r.status_code == 403, r.text
-    assert "propre soumission" in r.json()["detail"]
+    assert "own submission" in r.json()["detail"]
 
     # Un valideur d'un nœud PARENT décide.
     r = await client.post(f"/api/v1/approvals/{req_id}/approve", json={}, headers=_h(approver))
