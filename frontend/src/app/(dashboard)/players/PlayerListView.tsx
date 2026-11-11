@@ -43,7 +43,7 @@ export function sinceLabel(iso: string | null | undefined): string {
   if (s < 60) return `${s}s`
   if (s < 3600) return `${Math.floor(s / 60)}m`
   if (s < 86400) return `${Math.floor(s / 3600)}h`
-  return `${Math.floor(s / 86400)}j`
+  return `${Math.floor(s / 86400)}d`
 }
 
 /** Statut → variante de badge. `critical` se lit comme `offline` (bucketing NOC/dashboard). */

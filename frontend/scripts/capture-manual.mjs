@@ -126,7 +126,22 @@ const SHOTS = [
   { name: 'media-generate-ai', url: '/media', act: cliquerTexte(/g[ée]n[ée]rer \(ia\)|generate \(ai\)/i) },
   // Générateur promo : le parcours en étapes, puis le mode série. Le module existait depuis le
   // 02/07 sans aucune capture — sa section de manuel était la seule sans image.
-  { name: 'promo', url: '/promo' },
+  // Le formulaire rempli (slogan + prix) : vide, l'aperçu n'est qu'une toile blanche — c'est
+  // ce que montraient les captures du 09/11, prises pour un aperçu cassé.
+  {
+    name: 'promo',
+    url: '/promo',
+    act: async (page) => {
+      const step = page.getByTestId('step-content')
+      await step.locator('button').first().click({ timeout: 10000 })
+      await step.locator('input').first().fill(ME.locale === 'fr' ? 'Croissants du matin' : 'Morning croissants')
+      await step.getByPlaceholder('4,99').fill(ME.locale === 'fr' ? '3,90' : '3.90')
+      await step.getByPlaceholder('6,99').fill(ME.locale === 'fr' ? '4,90' : '4.90')
+      // La conformité est revalidée en différé : sans attendre, le bandeau « prix requis »
+      // de l'état vide reste sur la capture.
+      await page.getByTestId('promo-not-conform').waitFor({ state: 'detached', timeout: 10000 })
+    },
+  },
   {
     name: 'promo-serie',
     url: '/promo',
