@@ -841,7 +841,15 @@
     "assist_answer_ph": "Your answer…",
     "assist_applied": "Prompt applied above (editable).",
     "assist_unavailable": "Add an AI key (Anthropic) in Settings to enable the assistant.",
-    "assist_error": "Assistant unavailable."
+    "assist_error": "Assistant unavailable.",
+    "model_label_flux_dev_i2i": "FLUX dev (Bild→Bild)",
+    "model_label_nano_banana_edit": "Nano Banana (Bearbeitung per Anweisung)",
+    "model_label_birefnet": "Hintergrund entfernen",
+    "model_label_ltx_i2v": "LTX (Bild→Video)",
+    "model_label_wan25_i2v": "Wan 2.5 (Bild→Video)",
+    "model_label_kling_v2_i2v": "Kling v2 (Bild→Video)",
+    "model_label_elevenlabs_voice": "ElevenLabs (Stimme)",
+    "model_label_elevenlabs_music": "ElevenLabs (Musik)"
   },
   "promo": {
     "title": "Promo-Generator",
@@ -1012,7 +1020,15 @@
     "serie_unnamed": "(ohne Namen)",
     "serie_incomplete": "{n} Zeile(n) ohne Preis: {names}. Sie werden übersprungen — der Rest der Serie läuft trotzdem.",
     "serie_generate": "Die {n} erzeugen",
-    "serie_varies_note": "In einer Serie variieren Slogan und Preise je Zeile: sie werden in der Tabelle erfasst. Was hier bleibt, gilt für alle Visuals."
+    "serie_varies_note": "In einer Serie variieren Slogan und Preise je Zeile: sie werden in der Tabelle erfasst. Was hier bleibt, gilt für alle Visuals.",
+    "tpl_label_fresh": "Frisch / Lebensmittel",
+    "tpl_label_premium": "Premium / Feinkost",
+    "amb_label_fresh": "Frisch / Markt",
+    "amb_label_gourmand": "Feinkost / Bäckerei",
+    "amb_label_premium": "Premium / Luxus",
+    "amb_label_festif": "Festlich",
+    "amb_label_frais_bleu": "Frisch / Blau",
+    "amb_label_neutre": "Neutral / Studio"
   },
   "studio": {
     "title": "Campaign Studio",

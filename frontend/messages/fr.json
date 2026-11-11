@@ -841,7 +841,15 @@
     "assist_answer_ph": "Votre réponse…",
     "assist_applied": "Prompt appliqué ci-dessus (éditable).",
     "assist_unavailable": "Ajoutez une clé IA (Anthropic) dans les Réglages pour activer l'assistant.",
-    "assist_error": "Assistant indisponible."
+    "assist_error": "Assistant indisponible.",
+    "model_label_flux_dev_i2i": "FLUX dev (image→image)",
+    "model_label_nano_banana_edit": "Nano Banana (édition par instruction)",
+    "model_label_birefnet": "Détourage (supprimer le fond)",
+    "model_label_ltx_i2v": "LTX (image→vidéo)",
+    "model_label_wan25_i2v": "Wan 2.5 (image→vidéo)",
+    "model_label_kling_v2_i2v": "Kling v2 (image→vidéo)",
+    "model_label_elevenlabs_voice": "ElevenLabs (voix)",
+    "model_label_elevenlabs_music": "ElevenLabs (musique)"
   },
   "promo": {
     "title": "Générateur promo",
@@ -1012,7 +1020,15 @@
     "serie_unnamed": "(sans nom)",
     "serie_incomplete": "{n} ligne(s) sans prix : {names}. Elles seront ignorées — le reste de la série part quand même.",
     "serie_generate": "Générer les {n}",
-    "serie_varies_note": "En série, le slogan et les prix varient d'une ligne à l'autre : ils se saisissent dans le tableau. Ce qui reste ici s'applique à tous les visuels."
+    "serie_varies_note": "En série, le slogan et les prix varient d'une ligne à l'autre : ils se saisissent dans le tableau. Ce qui reste ici s'applique à tous les visuels.",
+    "tpl_label_fresh": "Frais / Alimentaire",
+    "tpl_label_premium": "Premium / Gourmand",
+    "amb_label_fresh": "Frais / Marché",
+    "amb_label_gourmand": "Gourmand / Boulangerie",
+    "amb_label_premium": "Premium / Luxe",
+    "amb_label_festif": "Festif",
+    "amb_label_frais_bleu": "Frais / Bleu",
+    "amb_label_neutre": "Neutre / Studio"
   },
   "studio": {
     "title": "Studio de campagne",

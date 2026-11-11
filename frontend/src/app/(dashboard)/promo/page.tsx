@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { useServerLabels } from '@/lib/serverLabels'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Sparkles, AlertTriangle, CheckCircle2, Loader2, Image as ImageIcon, Scissors, Wand2, Link2, Layers, X, Upload, Palette, RefreshCw, Settings2 } from 'lucide-react'
 import Link from 'next/link'
@@ -61,6 +62,7 @@ type StepKey = typeof STEPS[number]
 
 export default function PromoPage() {
   const t = useTranslations()
+  const { promoTemplate, promoAmbiance } = useServerLabels()
   const qc = useQueryClient()
   const orgId = useAuthStore((s) => s.user?.id_org)
 
@@ -751,7 +753,7 @@ export default function PromoPage() {
 
             {/* ④ Mise en page */}
             <StepCard n={stepNo('layout')} label={t('promo.step_layout')} done={!!template}
-              value={template ? `${template.label} · ${format} · ${resolution.toUpperCase()}` : null}
+              value={template ? `${promoTemplate(template)} · ${format} · ${resolution.toUpperCase()}` : null}
               open={!!openSteps.layout} onToggle={() => toggleStep('layout')} testId="step-layout">
               <div className="grid grid-cols-2 gap-1.5">
                 {templates.map((tpl) => (
@@ -762,7 +764,7 @@ export default function PromoPage() {
                       <PromoPreview template={tpl} format={tpl.formats.includes(format) ? format : tpl.formats[0]}
                         inputs={inputs} backgroundUrl={bgUrl} productUrl={productUrl} fontFamilies={fontFamilies} />
                     </div>
-                    <span className="mt-0.5 block truncate px-0.5 text-[11px] font-medium text-gray-700">{tpl.label}</span>
+                    <span className="mt-0.5 block truncate px-0.5 text-[11px] font-medium text-gray-700">{promoTemplate(tpl)}</span>
                   </button>
                 ))}
               </div>
@@ -794,7 +796,7 @@ export default function PromoPage() {
                 <div className="grid grid-cols-2 gap-1.5">
                   <select value={bgAmbiance} onChange={(e) => setBgAmbiance(e.target.value)} className={inp}>
                     <option value="">{t('promo.bg_ambiance')}</option>
-                    {(ambData?.ambiances ?? []).map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+                    {(ambData?.ambiances ?? []).map((a) => <option key={a.id} value={a.id}>{promoAmbiance(a)}</option>)}
                   </select>
                   <select value={bgFocus} onChange={(e) => setBgFocus(e.target.value)} className={inp}>
                     <option value="">{t('promo.bg_focus_none')}</option>

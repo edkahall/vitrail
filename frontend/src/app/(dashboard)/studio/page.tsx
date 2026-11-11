@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { useServerLabels } from '@/lib/serverLabels'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Sparkles, Wand2, AlertTriangle, CheckCircle2, Loader2, Image as ImageIcon,
@@ -52,6 +53,7 @@ function planSignature(brief: string, types: Set<CType>, nConcepts: number) {
 
 export default function StudioPage() {
   const t = useTranslations()
+  const { genModel } = useServerLabels()
   const qc = useQueryClient()
   const orgId = useAuthStore((s) => s.user?.id_org)
 
@@ -203,7 +205,7 @@ export default function StudioPage() {
       <select value={chosen(kind)?.id ?? ''} onChange={(e) => setModel(kind, e.target.value)}
         className="w-full rounded border border-gray-200 bg-surface px-2 py-1.5 text-sm">
         {modelsOf(kind).map((m) => (
-          <option key={m.id} value={m.id}>{m.label} · {t(`generation.tier_${m.tier}`)}</option>
+          <option key={m.id} value={m.id}>{genModel(m)} · {t(`generation.tier_${m.tier}`)}</option>
         ))}
       </select>
     </div>
@@ -237,8 +239,8 @@ export default function StudioPage() {
   const settingsSummary = [
     types.has('image') && t('studio.sum_concepts', { n: nConcepts }),
     types.has('image') && ratios.length > 0 && ratios.join(' · '),
-    types.has('image') && chosen('image')?.label,
-    types.has('video') && chosen('video')?.label,
+    types.has('image') && chosen('image') && genModel(chosen('image')!),
+    types.has('video') && chosen('video') && genModel(chosen('video')!),
   ].filter(Boolean).join(' · ')
 
   const STEPS: { key: Phase; label: string }[] = [

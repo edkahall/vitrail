@@ -841,7 +841,15 @@
     "assist_answer_ph": "Your answer…",
     "assist_applied": "Prompt applied above (editable).",
     "assist_unavailable": "Add an AI key (Anthropic) in Settings to enable the assistant.",
-    "assist_error": "Assistant unavailable."
+    "assist_error": "Assistant unavailable.",
+    "model_label_flux_dev_i2i": "FLUX dev (image→image)",
+    "model_label_nano_banana_edit": "Nano Banana (instruction-based editing)",
+    "model_label_birefnet": "Background removal",
+    "model_label_ltx_i2v": "LTX (image→video)",
+    "model_label_wan25_i2v": "Wan 2.5 (image→video)",
+    "model_label_kling_v2_i2v": "Kling v2 (image→video)",
+    "model_label_elevenlabs_voice": "ElevenLabs (voice)",
+    "model_label_elevenlabs_music": "ElevenLabs (music)"
   },
   "promo": {
     "title": "Promo Generator",
@@ -1012,7 +1020,15 @@
     "serie_unnamed": "(unnamed)",
     "serie_incomplete": "{n} row(s) without a price: {names}. They will be skipped — the rest of the series still runs.",
     "serie_generate": "Generate the {n}",
-    "serie_varies_note": "In a series, slogan and prices vary per row: they are entered in the table. What stays here applies to every visual."
+    "serie_varies_note": "In a series, slogan and prices vary per row: they are entered in the table. What stays here applies to every visual.",
+    "tpl_label_fresh": "Fresh / Food",
+    "tpl_label_premium": "Premium / Gourmet",
+    "amb_label_fresh": "Fresh / Market",
+    "amb_label_gourmand": "Gourmet / Bakery",
+    "amb_label_premium": "Premium / Luxury",
+    "amb_label_festif": "Festive",
+    "amb_label_frais_bleu": "Fresh / Blue",
+    "amb_label_neutre": "Neutral / Studio"
   },
   "studio": {
     "title": "Campaign Studio",

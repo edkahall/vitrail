@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { useServerLabels } from '@/lib/serverLabels'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Sparkles, Image as ImageIcon, Film, Music, AlertTriangle } from 'lucide-react'
 import Drawer from '@/components/ui/Drawer'
@@ -27,6 +28,7 @@ export default function GenerateDialog({
   onVideoQueued: () => void
 }) {
   const t = useTranslations()
+  const { genModel } = useServerLabels()
   const orgId = useAuthStore((s) => s.user?.id_org)
   const [tab, setTab] = useState<Tab>('image')
   const [audioKind, setAudioKind] = useState<'music' | 'voice'>('music')
@@ -259,7 +261,7 @@ export default function GenerateDialog({
             <select value={selected?.id} onChange={(e) => setModelId(e.target.value)}
               className="w-full rounded border border-gray-200 bg-surface px-2 py-1.5 text-sm">
               {availModels.map((m) => (
-                <option key={m.id} value={m.id}>{m.label} · {t(`generation.tier_${m.tier}`)}</option>
+                <option key={m.id} value={m.id}>{genModel(m)} · {t(`generation.tier_${m.tier}`)}</option>
               ))}
             </select>
             {selected?.tier === 'high' && (

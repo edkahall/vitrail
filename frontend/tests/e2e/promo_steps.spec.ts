@@ -24,7 +24,8 @@ const USER = {
 const TEMPLATES = {
   templates: [{
     id: 'fresh',
-    label: 'Frais',
+    // Le VRAI libellé du serveur (anglais) : l'interface française doit le traduire par l'id.
+    label: 'Fresh / Food',
     formats: ['16:9'],
     theme: { accent: '#3F8F4F', ink: '#1D2B3A', paper: '#F8F7F5', badge_bg: '#E4572E', badge_ink: '#FFFFFF', font: 'Inter' },
     layouts: {
@@ -39,7 +40,10 @@ const TEMPLATES = {
   resolutions: { '16:9': ['fhd', '4k'] },
 }
 
-async function setup(page: Page, { advertisers = [{ id_advertiser: 7, advertiser_name: 'Brightwell' }] } = {}) {
+async function setup(page: Page, {
+  advertisers = [{ id_advertiser: 7, advertiser_name: 'Brightwell' }],
+  templates = TEMPLATES,
+} = {}) {
   await page.goto(`${BASE}/login`)
   await page.evaluate((u) => {
     const b64url = (o: unknown) =>
@@ -62,7 +66,7 @@ async function setup(page: Page, { advertisers = [{ id_advertiser: 7, advertiser
   // ⚠️ Playwright résout les routes de la DERNIÈRE à la première : le glob générique d'abord.
   await page.route('**/api/v1/**', (r) => r.fulfill(json([])))
   await page.route('**/api/v1/users/me', (r) => r.fulfill(json(USER)))
-  await page.route('**/api/v1/promo/templates**', (r) => r.fulfill(json(TEMPLATES)))
+  await page.route('**/api/v1/promo/templates**', (r) => r.fulfill(json(templates)))
   await page.route('**/api/v1/promo/fonts**', (r) => r.fulfill(json({ fonts: [] })))
   await page.route('**/api/v1/promo/brand-kits/resolved**', (r) => r.fulfill(json({})))
   await page.route('**/api/v1/campaigns/advertisers**', (r) => r.fulfill(json(advertisers)))
@@ -98,7 +102,7 @@ test('une étape repliée affiche sa valeur, pas un tiroir vide', async ({ page 
   await setup(page)
   // 🔑 C'est CE comportement qui rend le repli acceptable : sans la valeur, on aurait caché
   // vingt contrôles derrière six libellés et rendu l'écran moins lisible qu'avant.
-  await expect(step(page, 'layout').getByTestId('step-layout-value')).toHaveText('Frais · 16:9 · FHD')
+  await expect(step(page, 'layout').getByTestId('step-layout-value')).toHaveText('Frais / Alimentaire · 16:9 · FHD')
   await expect(step(page, 'content').getByTestId('step-content-value')).toHaveText('à remplir')
   await expect(step(page, 'product').getByTestId('step-product-value')).toHaveText('Aucun')
 })
@@ -161,4 +165,12 @@ test('choisir une image passe par le tiroir de médiathèque, pas par une grille
   await header(page, 'product').click()
   await page.getByTestId('promo-pick-product').click()
   await expect(page.getByPlaceholder(/Rechercher/i).first()).toBeVisible()
+})
+
+test('un modèle que l interface ne connaît pas garde le libellé du serveur', async ({ page }) => {
+  // Témoin du repli : un modèle ajouté côté serveur ne doit jamais s'afficher en clé brute.
+  await setup(page, {
+    templates: { ...TEMPLATES, templates: [{ ...TEMPLATES.templates[0], id: 'bakery_2027', label: 'Bakery 2027' }] },
+  })
+  await expect(step(page, 'layout').getByTestId('step-layout-value')).toHaveText('Bakery 2027 · 16:9 · FHD')
 })
