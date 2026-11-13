@@ -62,11 +62,11 @@ if [[ "$ARCH" != "aarch64" && "$ARCH" != "armv7l" ]]; then
   echo "Warning: unexpected architecture '$ARCH' -- this script targets Raspberry Pi OS (arm64/armhf)."
 fi
 
-# ── 1. Node.js 20 LTS ─────────────────────────────────────────────────────────
+# ── 1. Node.js 22 LTS ─────────────────────────────────────────────────────────
 if ! command -v node &>/dev/null || \
-   [ "$(node -e 'console.log(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)" -lt 20 ]; then
-  echo "[1/7] Installing Node.js 20 LTS..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+   [ "$(node -e 'console.log(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)" -lt 22 ]; then
+  echo "[1/7] Installing Node.js 22 LTS..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 else
   echo "[1/7] Node.js $(node --version) already present."
@@ -187,16 +187,20 @@ while true; do
   sleep 1  # Let cage Wayland compositor fully initialize before Electron connects
   # --ozone-platform=wayland : use Wayland backend (RPi OS Trixie default)
   # --no-sandbox             : required on RPi OS (no setuid sandbox helper)
-  # --enable-gpu --use-gl=egl --use-v4l2-codec : GPU hardware accel (validated with cage)
-  #   Note: GPU subprocess logs exit_code=5 (EGL passthrough unsupported on RPi5/Mesa)
-  #   but this is non-fatal -- Chromium falls back to software rendering automatically.
+  # --enable-gpu --use-gl=angle --use-angle=gles : GPU compositing/raster through ANGLE on
+  #   the V3D OpenGL ES driver (Electron 42, measured on RPi 5: gpu_compositing=enabled).
+  #   The former --use-gl=egl no longer exists in Electron 42, and even under Electron 30
+  #   it never worked here (GPU process exit_code=5 -> everything in software).
+  #   Video stays CPU-decoded: the RPi 5 has no H.264 decoder, and Chromium on Linux
+  #   only uses VA-API, not the V4L2 HEVC decoder.
   #   --disable-gpu breaks fullscreen under cage/Wayland so we keep --enable-gpu.
   # --disable-dev-shm-usage  : /dev/shm too small on some RPi configs
   "$PLAYER_DIR/node_modules/.bin/electron" "$PLAYER_DIR" \\
     --ozone-platform=wayland \\
     --no-sandbox \\
     --enable-gpu \\
-    --use-gl=egl \\
+    --use-gl=angle \\
+    --use-angle=gles \\
     --use-v4l2-codec \\
     --disable-dev-shm-usage \\
     --start-fullscreen \\
@@ -414,9 +418,9 @@ data = {
     # Codecs HW dépendants du modèle (Pi4 H.264+HEVC ; Pi5 HEVC HW, H.264 software)
     # -> laissé vide tant que non confirmé par validation terrain.
     "codecs": [],
-    "gl_backend": "egl",
+    "gl_backend": "angle-gles",
     "sf_hw_decode": os.environ.get("SF_CAP_MODE", "auto"),
-    "chromium_flags": [],  # déjà sur la CLI cage (--use-v4l2-codec --use-gl=egl)
+    "chromium_flags": [],  # déjà sur la CLI cage (--use-v4l2-codec --use-gl=angle --use-angle=gles)
     "detection_source": "install",
     "detected_at": datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
 }

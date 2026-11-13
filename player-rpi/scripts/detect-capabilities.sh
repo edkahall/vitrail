@@ -20,7 +20,7 @@ if [ -z "$OUT" ]; then
 fi
 mkdir -p "$(dirname "$OUT")"
 
-# Sur RPi, le decodage V4L2 est pousse par cage (--use-v4l2-codec --use-gl=egl) -> actif.
+# Sur RPi, le decodage V4L2 est pousse par cage (--use-v4l2-codec --use-gl=angle --use-angle=gles) -> actif.
 RPI_METHOD="v4l2"; RPI_ACTIVE="true"
 if [ "$SF_HW_DECODE" = "off" ]; then RPI_METHOD="none"; RPI_ACTIVE="false"; fi
 # /dev/video* absent -> pas de V4L2 (cas rare, ex. headless mal configure).
@@ -37,7 +37,7 @@ data = {
     "hw_decode": method,
     "hw_decode_active": os.environ.get("SF_CAP_ACTIVE") == "true",
     "codecs": [],  # dependant du modele (Pi4 H.264+HEVC, Pi5 HEVC HW) -> a confirmer terrain
-    "gl_backend": "egl",
+    "gl_backend": "angle-gles",
     "sf_hw_decode": os.environ.get("SF_CAP_MODE", "auto"),
     "chromium_flags": [],  # deja sur la CLI cage
     "detection_source": "manual",

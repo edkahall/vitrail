@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "ws": "^8.18.0",
-    "electron": "^30.0.0"
+    "electron": "^42.11.18"
   }
 }

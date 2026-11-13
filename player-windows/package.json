@@ -10,7 +10,7 @@
     "make": "electron-forge make"
   },
   "dependencies": {
-    "electron": "^30.0.0",
+    "electron": "^42.11.18",
     "ws": "^8.18.0"
   },
   "devDependencies": {

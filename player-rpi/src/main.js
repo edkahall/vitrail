@@ -852,9 +852,16 @@ function createWindow() {
   } catch {}
 
   // Forward des logs du renderer vers le fichier (debug terrain)
-  mainWindow.webContents.on('console-message', (_e, level, message) => {
-    const lvl = ['verbose', 'info', 'warning', 'error'][level] || 'info';
-    _writeLog(`renderer:${lvl}`, message);
+  // Electron >= 35 porte niveau et message sur l'événement (level = 'info'|'warning'|'error'|
+  // 'debug') et déclare obsolètes les arguments positionnels d'Electron 30 (level 0-3, message).
+  // Les DEUX formes doivent marcher : un OTA ne livre que src/ + package.json, jamais le moteur,
+  // donc un parc reste en Electron 30 tant que chaque appareil n'a pas été réinstallé.
+  // `...args` (et non 3 paramètres nommés) : le listener ne réclame que l'événement.
+  mainWindow.webContents.on('console-message', (e, ...args) => {
+    const modern = e && typeof e.message === 'string';
+    const lvl = modern ? (e.level || 'info')
+      : (['verbose', 'info', 'warning', 'error'][args[0]] || 'info');
+    _writeLog(`renderer:${lvl}`, modern ? e.message : args[1]);
   });
 
   // Crash du process renderer en RÉGIME STABLE : sans handler, la fenêtre reste figée sur

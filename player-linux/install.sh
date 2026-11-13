@@ -70,10 +70,10 @@ apt-get install -y --no-install-recommends \
   xserver-xorg xinit openbox lightdm x11-xserver-utils \
   v4l-utils
 
-# ── 2. Node.js 20 LTS ─────────────────────────────────────────────────────────
-if ! command -v node &>/dev/null || [ "$(node -e 'console.log(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)" -lt 20 ]; then
-  echo "[2/8] Installing Node.js 20 LTS..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+# ── 2. Node.js 22 LTS ─────────────────────────────────────────────────────────
+if ! command -v node &>/dev/null || [ "$(node -e 'console.log(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)" -lt 22 ]; then
+  echo "[2/8] Installing Node.js 22 LTS..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y nodejs
 else
   echo "[2/8] Node.js $(node --version) already present."

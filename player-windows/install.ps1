@@ -12,8 +12,8 @@ Write-Host "Vitrail Player - Windows Installer" -ForegroundColor Cyan
 Write-Host "Install directory: $InstallDir"
 Write-Host ""
 
-# 0. Node.js 20+ prerequisite.
-#    Same contract as player-linux / player-rpi install.sh, which both install Node 20 LTS
+# 0. Node.js 22+ prerequisite (Electron 42 declares engines node >= 22.12).
+#    Same contract as player-linux / player-rpi install.sh, which both install Node 22 LTS
 #    themselves. Windows was the only platform NOT doing it: a fresh Windows 11 has no node,
 #    so the `npm install` below died with a bare "npm is not recognized" (measured 2026-08-09
 #    on a clean Win11 25H2 VM, which is exactly the "existing PC" this channel targets).
@@ -21,15 +21,15 @@ $nodeOk = $false
 if (Get-Command node -ErrorAction SilentlyContinue) {
   $major = 0
   try { $major = [int](& node -e "console.log(process.versions.node.split('.')[0])" 2>$null) } catch {}
-  if ($major -ge 20) {
+  if ($major -ge 22) {
     $nodeOk = $true
     Write-Host "[prereq] Node.js $(& node --version) already present." -ForegroundColor Green
   } else {
-    Write-Host "[prereq] Node.js $major is too old (20+ required)." -ForegroundColor Yellow
+    Write-Host "[prereq] Node.js $major is too old (22+ required)." -ForegroundColor Yellow
   }
 }
 if (-not $nodeOk) {
-  Write-Host "[prereq] Installing Node.js 20 LTS..." -ForegroundColor Yellow
+  Write-Host "[prereq] Installing Node.js 22+ LTS..." -ForegroundColor Yellow
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget install --id OpenJS.NodeJS.LTS -e --silent `
       --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
