@@ -46,18 +46,18 @@ autorun.brs (BrightScript, sur la carte SD)
 
 ## Préparation de la carte (micro)SD
 
+> **Méthode recommandée** : Utiliser le générateur de carte SD intégré dans Vitrail (**Écrans → Provisioning → Carte SD BrightSign**). Il archive automatiquement la configuration, `autorun.brs`, `bootstrap.html`, ainsi que les fichiers du renderer offline (`sf_rnd_*`) dans un fichier ZIP prêt à l'emploi.
+
+Pour une préparation manuelle de la carte microSD :
+
 1. Formater la microSD en **FAT32** (ou exFAT selon BOS).
 > **⚠️ Firmware requis : BOS 9.1.x** (validé sur 9.1.132). Le vieux fork BrightScript de 8.5.70 **refuse
 > de compiler** `Left()`/`Chr()`/`Str()` → mettre à jour (copier le `.bsfw` à la racine de la SD, boot,
 > il s'applique tout seul). Une image SD propre de référence est dans `SD_card_BS/sd_image_clean/`.
 
-2. Copier à la **racine** de la carte :
-   - `autorun.brs`
-   - **`ss_body.json`** = `{"width":1280,"height":720}` — _OPTIONNEL depuis P0.2_ : c'est le corps du POST
-     snapshot DWS (taille de la capture). **L'autorun le crée tout seul au boot s'il manque** (`FormatJson`,
-     pas de quote échappée à la compile) et le handler screenshot reconstruit le corps si le fichier est
-     illisible → plus jamais de screenshot KO silencieux sur une SD sans ce fichier. Ne le copier à la main
-     que pour **forcer une autre taille** de capture.
+2. Copier à la **racine** de la carte l'ensemble des fichiers nécessaires :
+   - `autorun.brs` (depuis `player-brightsign/autorun.brs`)
+   - `bootstrap.html` (depuis `frontend/public/player-chromeos/brightsign/bootstrap.html` — indispensable pour servir la page racine locale et initialiser le runtime)
    - `config.json` (copie de `config.json.example`, renseignée) :
      ```json
      {
@@ -76,10 +76,21 @@ autorun.brs (BrightScript, sur la carte SD)
      > pas de rewind). Le screenshot capture le framebuffer **composite** (vidéo HW incluse) via le snapshot LDWS.
      > Effectif au **2e reboot** après insertion (le LDWS est configuré au boot, effectif au suivant).
      > **`"autorun_autoupdate": true`** (P1.2) → l'autorun se met à jour tout seul depuis prod
-     > (`/player-chromeos/brightsign/autorun.brs`) au boot, garde-fous anti-brick (taille/préfixe), effectif au
+     > (`/player-chromeos/brightsign/autorun.brs`) au boot, avec garde-fous anti-brick (taille/préfixe), effectif au
      > prochain boot. Opt-in (feature à risque). **Sync de publication** : après tout changement de
      > `player-brightsign/autorun.brs`, copier le fichier dans **`frontend/public/player-chromeos/brightsign/autorun.brs`**
      > (= la copie servie par prod, modèle dual identique au renderer) puis rebuild frontend prod.
+   - **`ss_body.json`** = `{"width":1280,"height":720}` — _OPTIONNEL depuis P0.2_ : c'est le corps du POST
+     snapshot DWS (taille de la capture). **L'autorun le crée tout seul au boot s'il manque** (`FormatJson`,
+     pas de quote échappée à la compile) et le handler screenshot reconstruit le corps si le fichier est
+     illisible → plus jamais de screenshot KO silencieux sur une SD sans ce fichier. Ne le copier à la main
+     que pour **forcer une autre taille** de capture.
+   - **Fichiers du renderer (offline au 1er boot)** : Pré-embarquer ces fichiers évite que le player ne reste bloqué sur « Connecting… » si la liaison réseau / DHCP met plusieurs minutes à s'établir au démarrage :
+     - `sf_rnd_ed25519.js` (copie de `frontend/public/player-chromeos/ed25519.js`)
+     - `sf_rnd_signflow.js` (copie de `frontend/public/player-chromeos/signflow.js`)
+     - `sf_rnd_audio_player.js` (copie de `frontend/public/player-chromeos/audio_player.js`)
+     - `sf_rnd_player.js` (copie de `frontend/public/player-chromeos/player.js`)
+     - `sf_rnd_style.css` (copie de `frontend/public/player-chromeos/style.css`)
 3. Insérer la carte dans le HD1024, brancher l'écran (HDMI) + le réseau (Ethernet/DHCP), allumer.
 
 > Au 1er boot : le bridge échange `sfp_…` contre un **JWT**, le persiste en localStorage

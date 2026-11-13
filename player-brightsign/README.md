@@ -50,18 +50,18 @@ SHARED renderer.)
 
 ## Preparing the (micro)SD card
 
+> **Recommended approach**: Use the built-in SD card generator in Vitrail (**Players → Provisioning → BrightSign SD card**). It automatically bundles the configuration, `autorun.brs`, `bootstrap.html`, and pre-packaged offline renderer files (`sf_rnd_*`) into a ready-to-unzip archive.
+
+If preparing the microSD card manually:
+
 1. Format the microSD as **FAT32** (or exFAT depending on the BOS).
 > **⚠️ Required firmware: BOS 9.1.x** (validated on 9.1.132). The old BrightScript fork of 8.5.70 **refuses
 > to compile** `Left()`/`Chr()`/`Str()` → update it (copy the `.bsfw` to the root of the SD card, boot,
 > it applies itself). A clean reference SD image is in `SD_card_BS/sd_image_clean/`.
 
-2. Copy to the **root** of the card:
-   - `autorun.brs`
-   - **`ss_body.json`** = `{"width":1280,"height":720}` — _OPTIONAL since P0.2_: it is the body of the DWS
-     snapshot POST (capture size). **The autorun creates it by itself at boot if it is missing** (`FormatJson`,
-     no escaped quote at compile time) and the screenshot handler rebuilds the body if the file is
-     unreadable → no more silently failing screenshots on an SD card without this file. Only copy it by hand
-     to **force a different** capture size.
+2. Copy all required files to the **root** of the card:
+   - `autorun.brs` (from `player-brightsign/autorun.brs`)
+   - `bootstrap.html` (from `frontend/public/player-chromeos/brightsign/bootstrap.html` — required for the local HTTP origin and initial widget load)
    - `config.json` (copy of `config.json.example`, filled in):
      ```json
      {
@@ -84,6 +84,17 @@ SHARED renderer.)
      > next boot. Opt-in (risky feature). **Publication sync**: after any change to
      > `player-brightsign/autorun.brs`, copy the file to **`frontend/public/player-chromeos/brightsign/autorun.brs`**
      > (= the copy served by production, same dual model as the renderer) then rebuild the production frontend.
+   - **`ss_body.json`** = `{"width":1280,"height":720}` — _OPTIONAL since P0.2_: it is the body of the DWS
+     snapshot POST (capture size). **The autorun creates it by itself at boot if it is missing** (`FormatJson`,
+     no escaped quote at compile time) and the screenshot handler rebuilds the body if the file is
+     unreadable → no more silently failing screenshots on an SD card without this file. Only copy it by hand
+     to **force a different** capture size.
+   - **Renderer files (for offline first boot)**: Pre-provisioning these files prevents the player from remaining stuck on "Connecting…" when network connectivity takes time to initialize at boot:
+     - `sf_rnd_ed25519.js` (copy of `frontend/public/player-chromeos/ed25519.js`)
+     - `sf_rnd_signflow.js` (copy of `frontend/public/player-chromeos/signflow.js`)
+     - `sf_rnd_audio_player.js` (copy of `frontend/public/player-chromeos/audio_player.js`)
+     - `sf_rnd_player.js` (copy of `frontend/public/player-chromeos/player.js`)
+     - `sf_rnd_style.css` (copy of `frontend/public/player-chromeos/style.css`)
 3. Insert the card into the HD1024, connect the screen (HDMI) + the network (Ethernet/DHCP), power on.
 
 > On first boot: the bridge exchanges `sfp_…` for a **JWT**, persists it in localStorage
