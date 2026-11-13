@@ -78,7 +78,7 @@ export default function TagsPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['tag-namespaces'] })
 
   const saveNs = useMutation({
-    mutationFn: (f: NsForm) =>
+    mutationFn: (f: NsForm): Promise<unknown> =>
       f.id_namespace
         ? api.put(`/tags/namespaces/${f.id_namespace}`, {
             label: f.label || null,
@@ -103,7 +103,7 @@ export default function TagsPage() {
   })
 
   const saveVal = useMutation({
-    mutationFn: (f: ValForm) =>
+    mutationFn: (f: ValForm): Promise<unknown> =>
       f.id_tag
         ? api.put(`/tags/values/${f.id_tag}`, {
             label: f.label || null,
