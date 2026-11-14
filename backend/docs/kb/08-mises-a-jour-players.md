@@ -2,7 +2,7 @@
 title: Mises à jour des players (OTA)
 section: players
 roles: [CMS_ORG_ADMIN]
-keywords: [mise à jour, OTA, version, déploiement, players, updates, gestion des versions, rollback, fenêtre de maintenance, à jour, en retard, bêta, canary, groupe de test, suspendre, pause, importer, import, archive, tar.gz, apk, versions servies, déclarer, épinglage, pin, brightsign, chromeos, firmware, bs_bos]
+keywords: [mise à jour, OTA, version, déploiement, players, updates, gestion des versions, rollback, fenêtre de maintenance, à jour, en retard, bêta, canary, groupe de test, suspendre, pause, importer, import, archive, tar.gz, apk, versions servies, déclarer, épinglage, pin, brightsign, chromeos, firmware, bs_bos, moteur, electron, moteur electron, retour arrière, engine]
 ---
 
 # Mises à jour des players (OTA)
@@ -95,6 +95,25 @@ réussi / échec`, avec un **anneau de progression** (réussis / échecs) par d�
 le **suspendre** (les players en cours terminent, les autres attendent) puis le **reprendre** là
 où il s'était arrêté, l'**annuler**, ou **supprimer** un déploiement terminé/annulé. En cas de
 problème, la version précédente sert de base de retour arrière (rollback).
+
+## Le moteur Electron (Linux, Raspberry Pi, Windows)
+
+Une mise à jour du player ne change que son code, jamais son **moteur Electron**. Le moteur se met
+à jour à part : **Réglages → Mises à jour → bouton « Moteur Electron »** (tiroir).
+
+- **Récupérer une version** (exploitant du serveur seulement) : saisir la version d'Electron
+  (ex. `42.11.18`), cocher les plateformes, **Récupérer**. Le serveur télécharge la version
+  officielle, vérifie sa somme, la stocke ; elle arrive en **bêta**.
+- **Déployer** (chaque admin d'organisation, sur ses écrans) : dans « Déployer sur », choisir la
+  cible et les fenêtres horaires, puis **Déployer** sur la ligne voulue. Avec un player choisi, seules
+  les versions de sa plateforme sont proposées. Une version **bêta** ne s'essaie que sur **un seul
+  player** ; une fois **promue** par l'exploitant, elle part sur des groupes, des sites ou toute l'org.
+- **Sécurité** : le player essaie le nouveau moteur ; s'il ne confirme pas son affichage en
+  **5 minutes**, il revient **seul** à l'ancien, la cible passe « rolled_back » et le déploiement
+  s'arrête au premier échec. Une coupure de courant pendant l'essai est reprise au démarrage.
+- Relancer la même version vers un player où elle est déjà en cours est refusé. Après le clic, le
+  tiroir affiche « Déploiement n°… lancé sur N player(s) ».
+- La colonne **Electron** de l'inventaire montre le moteur de chaque écran.
 
 ## Mettre à jour par l'assistant
 

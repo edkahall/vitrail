@@ -2,7 +2,7 @@
 title: Player updates (OTA)
 section: players
 roles: [CMS_ORG_ADMIN]
-keywords: [update, OTA, version, deployment, players, updates, version management, rollback, maintenance window, up to date, outdated, beta, canary, test group, suspend, pause, import, archive, tar.gz, apk, served versions, declare, pinning, pin, brightsign, chromeos, firmware, bs_bos, mise à jour, déploiement]
+keywords: [update, OTA, version, deployment, players, updates, version management, rollback, maintenance window, up to date, outdated, beta, canary, test group, suspend, pause, import, archive, tar.gz, apk, served versions, declare, pinning, pin, brightsign, chromeos, firmware, bs_bos, mise à jour, déploiement, engine, electron, electron engine, rollback, roll back]
 ---
 
 # Player updates (OTA)
@@ -95,6 +95,25 @@ succeeded / failed`, with a **progress ring** (succeeded / failed) per deploymen
 **suspend** it (players in progress finish, the others wait) then **resume** it where
 it stopped, **cancel** it, or **delete** a finished/cancelled deployment. In case of
 problems, the previous version serves as the rollback base.
+
+## The Electron engine (Linux, Raspberry Pi, Windows)
+
+A player update only changes its code, never its **Electron engine**. The engine is updated
+separately: **Settings → Updates → "Electron engine" button** (drawer).
+
+- **Get a version** (server operator only): type the Electron version (e.g. `42.11.18`), tick the
+  platforms, **Get**. The server downloads the official release, checks its checksum and stores
+  it; it arrives in **beta**.
+- **Deploy** (each org admin, to their own screens): in "Deploy to", choose the target and time
+  windows, then **Deploy** on the wanted row. With a player selected, only its platform's versions
+  are listed. A **beta** version can only be tried on **one player**; once the operator
+  **promotes** it, it can go to groups, sites or the whole organisation.
+- **Safety**: the player tries the new engine; if it does not confirm rendering within
+  **5 minutes**, it goes back to the previous one **on its own**, the target becomes "rolled_back"
+  and the deployment stops at the first failure. A power cut during the trial is handled at start-up.
+- Deploying the same version to a player where it is already in progress is refused. After the
+  click, the drawer shows "Deployment #… started on N player(s)".
+- The **Electron** column of the inventory shows each screen's engine.
 
 ## Update through the assistant
 

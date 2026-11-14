@@ -39,14 +39,22 @@ def _rollup(conn, id_deployment: int) -> None:
     concurrence (plusieurs cibles peuvent enqueue un rollup en même temps)."""
     cur = conn.cursor()
     cur.execute(
-        "SELECT id_org, status FROM cms_update_deployments WHERE id_deployment = %s FOR UPDATE",
+        "SELECT id_org, status, strategy_params FROM cms_update_deployments "
+        "WHERE id_deployment = %s FOR UPDATE",
         (id_deployment,),
     )
     dep = cur.fetchone()
     if not dep:
         conn.rollback()
         return
-    id_org, old_status = dep
+    id_org, old_status, strategy_params = dep
+    stop_on_failure = bool((strategy_params or {}).get("stop_on_failure"))
+    # Échecs déjà vus et acceptés par l'exploitant à la reprise (/resume) : on ne s'arrête
+    # que sur un échec NOUVEAU, sinon la reprise serait aussitôt annulée par ce même rollup.
+    try:
+        acknowledged = int((strategy_params or {}).get("acknowledged_failures") or 0)
+    except (TypeError, ValueError):
+        acknowledged = 0
     if old_status == "cancelled":  # un déploiement annulé ne se recalcule pas
         conn.rollback()
         return
@@ -79,6 +87,11 @@ def _rollup(conn, id_deployment: int) -> None:
         new_status = "completed"
     elif terminal >= total:
         new_status = "failed" if failed > 0 else "completed"
+    elif stop_on_failure and failed > acknowledged:
+        # Arrêt au PREMIER échec (moteur, vitrail#5 / D3) : le déploiement se suspend — plus
+        # aucune directive n'est émise pour les cibles restantes (directive_for_player ne sert
+        # que pending/in_progress). L'exploitant regarde, puis reprend (/resume) ou annule.
+        new_status = "paused"
     elif non_pending > 0:
         new_status = "in_progress"
     else:
@@ -86,6 +99,7 @@ def _rollup(conn, id_deployment: int) -> None:
 
     set_started = new_status == "in_progress" and old_status == "pending"
     set_completed = new_status in ("completed", "failed")
+    paused_on_failure = new_status == "paused"
     cur.execute(
         "UPDATE cms_update_deployments SET status = %s, success_count = %s, failed_count = %s, "
         "started_at = COALESCE(started_at, CASE WHEN %s THEN now() END), "
@@ -96,7 +110,8 @@ def _rollup(conn, id_deployment: int) -> None:
     conn.commit()
 
     # Alerte à la TRANSITION vers `failed` (§XXII) — une seule fois (old_status != 'failed').
-    if new_status == "failed" and old_status != "failed":
+    # Une suspension sur échec alerte aussi : c'est elle qui demande un humain.
+    if (new_status == "failed" and old_status != "failed") or paused_on_failure:
         try:
             notifications.dispatch_sync(conn, id_org, "deployment_failed",
                                         {"id_deployment": id_deployment, "failed_count": failed})

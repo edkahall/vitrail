@@ -90,6 +90,10 @@ apt-get install -y --no-install-recommends \
 echo "[4/8] Installing npm dependencies..."
 cd "$PLAYER_DIR"
 npm install --omit=dev
+# Le moteur Electron appartient au compte du player (vitrail#5, décision D7) : c'est le player
+# lui-même qui le remplace depuis le serveur, sans aucun chemin vers root. Aucun privilège
+# nouveau : ce compte réécrit déjà `src/` à chaque mise à jour du code.
+chown -R "$SERVICE_USER:$SERVICE_USER" "$PLAYER_DIR/node_modules"
 
 # ── 5. Initial config ─────────────────────────────────────────────────────────
 echo "[5/8] Configuration..."
@@ -310,6 +314,9 @@ fi
 # Nettoie un SingletonLock périmé (reste après coupure de courant / kill brutal)
 # AVANT de lancer — en début de session aucune instance ne tourne, c'est sûr.
 echo "rm -f $CONFIG_DIR/Singleton* 2>/dev/null" >> "$OPENBOX_AUTOSTART"
+# Essai de moteur interrompu par une coupure (vitrail#5) : répare une bascule inachevée et
+# réarme le garde de retour arrière AVANT Electron. Synchrone (rapide), ne bloque jamais.
+echo "node $PLAYER_DIR/src/engine_guard.js boot-check --app-root $PLAYER_DIR --platform linux >> $LOG_FILE 2>&1" >> "$OPENBOX_AUTOSTART"
 echo "$ELECTRON_BIN $PLAYER_DIR >> $LOG_FILE 2>&1 &" >> "$OPENBOX_AUTOSTART"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$AUTOSTART_OB"
 echo "    → Openbox autostart (source unique) : $OPENBOX_AUTOSTART"

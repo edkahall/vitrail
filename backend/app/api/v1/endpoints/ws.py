@@ -2311,6 +2311,14 @@ async def _resolve_sync_payload(db, id_player: int) -> dict:
     except Exception as exc:  # noqa: BLE001
         payload["update"] = None
         print(f"[WS] OTA directive échec player {id_player}: {exc!r}")
+    # Moteur Electron (vitrail#5) : clé SÉPARÉE — jamais dans `update` (un player actuel y
+    # verrait un bundle de code). Un player sans gestionnaire ignore la clé.
+    try:
+        payload["engine_update"] = await ota.directive_for_player(
+            db, id_player, track=ota.ENGINE_TRACK)
+    except Exception as exc:  # noqa: BLE001
+        payload["engine_update"] = None
+        print(f"[WS] OTA engine directive échec player {id_player}: {exc!r}")
     return payload
 
 
@@ -3247,6 +3255,9 @@ async def ws_player(
                     try:
                         changed = await ota.mark_success_if_updated(
                             db, id_player, msg.get("player_version"))
+                        # Moteur (vitrail#5) : succès = l'Electron remonté est la cible.
+                        changed = list(set(changed) | set(await ota.mark_engine_success(
+                            db, id_player, ota.engine_version_of(caps))))
                         if changed:
                             await db.commit()
                             from app.workers.ota_worker import ota_rollup
@@ -3267,7 +3278,7 @@ async def ws_player(
                         st = str(msg.get("status") or "")
                     except (TypeError, ValueError):
                         continue
-                    if st not in ("downloading", "staged", "installing", "success", "failed"):
+                    if st not in ota.REPORTABLE_STATUSES:
                         continue
                     try:
                         changed = await ota.report_target(

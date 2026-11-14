@@ -6,17 +6,20 @@ création/suivi de déploiement. L'apply côté player (par OS) = slice 2. RLS +
 
 import json
 import re
+import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
 import redis.asyncio as aioredis
+import anyio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.deps import get_current_player, get_db, require_org_admin
+from app.core.deps import get_current_player, get_db, require_org_admin, require_server_operator
 from app.db.session import get_db_worker
 from app.models.player import CmsPlayer
 from app.models.player_version import (
@@ -28,6 +31,8 @@ from app.models.user import CmsUser
 from app.schemas.updates import (
     BundleImportResult,
     DeploymentCreate,
+    EngineFetchJob,
+    EngineFetchRequest,
     DeploymentDetail,
     DeploymentRead,
     DeploymentTargetRead,
@@ -38,7 +43,7 @@ from app.schemas.updates import (
     UpdateVersionPatch,
     UpdateVersionRead,
 )
-from app.services import bundle_import, media, ota
+from app.services import bundle_import, engine_import, media, ota, rbac
 from app.services.firmware import FirmwareRequired
 from app.services.served_versions import served_player_versions
 from app.services.targeting import Target
@@ -86,6 +91,125 @@ async def download_bundle(
         content=data, media_type=mime,
         headers={"Content-Disposition": f'attachment; filename="{platform}-{version}{ext}"'},
     )
+
+
+async def _require_operator_for_engine(
+    row: CmsPlayerUpdateVersion, user: CmsUser, wdb: AsyncSession
+) -> None:
+    """Principe 3 (vitrail#5) : le CATALOGUE des moteurs appartient à l'exploitant du serveur ⇒
+    seul lui promeut (= approuve) ou supprime une version moteur. Le déploiement, lui, suit
+    `_check_engine_deploy`."""
+    if row.track == ota.ENGINE_TRACK and not await rbac.user_is_server_operator(wdb, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Restricted to the server operator")
+
+
+async def _check_engine_deploy(
+    version: CmsPlayerUpdateVersion, targets: list, user: CmsUser, wdb: AsyncSession
+) -> None:
+    """Qui déploie un moteur (décision Ed du 14/11, serveurs à plusieurs organisations) :
+    l'exploitant tient le CATALOGUE (récupérer, promouvoir = approuver, supprimer) ; chaque
+    admin d'organisation déploie sur SES écrans — une version STABLE (approuvée) sur toute
+    cible, une version BÊTA sur un seul player à la fois (le banc). Un déploiement appartient
+    à l'organisation de son auteur : l'exploitant ne peut pas déployer chez une autre."""
+    if version.track != ota.ENGINE_TRACK or version.channel == "stable":
+        return
+    if await rbac.user_is_server_operator(wdb, user):
+        return
+    single_player = (len(targets) == 1 and targets[0].target_type == "player"
+                     and targets[0].target_id is not None)
+    if not single_player:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A beta engine can only be deployed to a single player (test bench) "
+                   "until the server operator promotes it.")
+
+
+@router.post("/engines/fetch", response_model=list[EngineFetchJob],
+             status_code=status.HTTP_202_ACCEPTED)
+async def engines_fetch(
+    body: EngineFetchRequest,
+    _: Annotated[CmsUser, Depends(require_server_operator)],
+) -> list[EngineFetchJob]:
+    """Récupère un moteur Electron OFFICIEL (D1) : une tâche par plateforme, qui télécharge le zip
+    et son SHASUMS256.txt, vérifie, reconditionne et crée la version `engine` en beta."""
+    from app.workers.engine_worker import fetch_engine, set_job
+
+    families = list(dict.fromkeys(body.families or []))
+    if not families:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Choose at least one platform.")
+    try:
+        checked = [engine_import.validate(body.version, f) for f in families]
+    except engine_import.EngineImportError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    jobs = []
+    for version, family in checked:
+        job_id = uuid.uuid4().hex
+        set_job(job_id, state="queued", version=version, family=family)
+        fetch_engine.delay(job_id, version, family)
+        jobs.append(EngineFetchJob(job_id=job_id, family=family, version=version))
+    return jobs
+
+
+@router.get("/engines/jobs/{job_id}")
+async def engines_fetch_job(
+    job_id: str,
+    _: Annotated[CmsUser, Depends(require_server_operator)],
+) -> dict:
+    """État d'une récupération de moteur (queued/downloading/storing/done/error)."""
+    if not re.fullmatch(r"[0-9a-f]{32}", job_id or ""):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown job.")
+    from app.workers.engine_worker import job_key
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        raw = await r.get(job_key(job_id))
+    finally:
+        await r.aclose()
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown job.")
+    return {"job_id": job_id, **json.loads(raw)}
+
+
+@router.get("/engines/{family}/{version}")
+async def download_engine(
+    family: str,
+    version: str,
+    _player: Annotated[CmsPlayer, Depends(get_current_player)],
+) -> StreamingResponse:
+    """Sert le moteur Electron reconditionné à un player de CETTE plateforme, en FLUX (~100 Mo :
+    jamais tout en mémoire). Authentifié par token machine ; une plateforme étrangère = 403."""
+    if family not in ota.ENGINE_FAMILIES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown platform.")
+    if (_player.player_os or "").lower() != family:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Engine is for a different platform than the player's.")
+    if not ota._SEMVER.match((version or "").strip()):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid version.")
+    key = engine_import.storage_key(family, version)
+    client = media._s3()
+    try:
+        obj = await anyio.to_thread.run_sync(
+            lambda: client.get_object(Bucket=settings.MINIO_BUCKET_MEDIA, Key=key))
+    except Exception:  # noqa: BLE001 — clé absente / stockage indispo → introuvable
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Engine not found.")
+    body = obj["Body"]
+
+    async def chunks():
+        try:
+            while True:
+                chunk = await anyio.to_thread.run_sync(body.read, 1024 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            body.close()
+
+    headers = {"Content-Disposition": f'attachment; filename="electron-{version}-{family}.tar.gz"'}
+    if obj.get("ContentLength") is not None:
+        headers["Content-Length"] = str(obj["ContentLength"])
+    return StreamingResponse(chunks(), media_type="application/gzip", headers=headers)
 
 
 # GET + HEAD : la sonde de l'amorce ChromeOS est un HEAD — or `@router.get` FastAPI ne
@@ -262,8 +386,9 @@ async def updates_version_import(
 @router.post("/versions/{id_version}/promote", response_model=UpdateVersionRead)
 async def updates_version_promote(
     id_version: int,
-    _: Annotated[CmsUser, Depends(require_org_admin)],
+    current_user: Annotated[CmsUser, Depends(require_org_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    wdb: Annotated[AsyncSession, Depends(get_db_worker)],
 ) -> CmsPlayerUpdateVersion:
     """Promeut une version de TEST (beta) en STABLE — workflow canary : on crée la version en beta
     (invisible du « latest » du parc), on la déploie sur un groupe de test, et si tout va bien on la
@@ -274,6 +399,7 @@ async def updates_version_promote(
     )).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    await _require_operator_for_engine(row, current_user, wdb)
     if row.channel == "stable":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already stable.")
     row.channel = "stable"
@@ -285,8 +411,9 @@ async def updates_version_promote(
 @router.delete("/versions/{id_version}", status_code=status.HTTP_204_NO_CONTENT)
 async def updates_version_delete(
     id_version: int,
-    _: Annotated[CmsUser, Depends(require_org_admin)],
+    current_user: Annotated[CmsUser, Depends(require_org_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    wdb: Annotated[AsyncSession, Depends(get_db_worker)],
 ) -> Response:
     """Supprime une version du catalogue si elle n'est référencée par aucun déploiement."""
     used = (await db.execute(
@@ -301,7 +428,14 @@ async def updates_version_delete(
     )).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    await _require_operator_for_engine(row, current_user, wdb)
     await db.delete(row)
+    if row.track == ota.ENGINE_TRACK and row.storage_key:
+        try:   # l'archive (~100 Mo) ne doit pas survivre à sa ligne de catalogue
+            await anyio.to_thread.run_sync(lambda: media._s3().delete_object(
+                Bucket=settings.MINIO_BUCKET_MEDIA, Key=row.storage_key))
+        except Exception:  # noqa: BLE001 — best-effort, la ligne est déjà supprimée
+            pass
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -430,6 +564,7 @@ async def deployment_create(
     body: DeploymentCreate,
     current_user: Annotated[CmsUser, Depends(require_org_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    wdb: Annotated[AsyncSession, Depends(get_db_worker)],
 ) -> CmsUpdateDeployment:
     """Crée un déploiement APPROUVÉ (cibles + stratégie) → un target/player en attente (§30.3)."""
     if body.strategy not in _STRATEGIES:
@@ -439,6 +574,7 @@ async def deployment_create(
     )).scalar_one_or_none()
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Version not found.")
+    await _check_engine_deploy(version, body.targets, current_user, wdb)
     targets = [Target(target_type=t.target_type, target_id=t.target_id, tag_expr=t.tag_expr or {})
                for t in body.targets]
     try:
@@ -450,6 +586,8 @@ async def deployment_create(
     # adéquat → 422 actionnable (importer le .bsfw puis rejouer), jamais un déploiement muet.
     except FirmwareRequired as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+    except ota.DeploymentInFlight as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     # Directive immédiate : force_sync les players ciblés → ils reçoivent le bloc `update` au
     # prochain sync (sinon ils l'auraient au reconnect / au prochain heartbeat-sync). Best-effort.
     tgt_ids = list((await db.execute(
@@ -568,6 +706,11 @@ async def deployment_resume(
         dep.status = "pending"
     dep.success_count = counts.get("success", 0)
     dep.failed_count = failed
+    if (dep.strategy_params or {}).get("stop_on_failure"):
+        # Reprendre = « j'ai vu ces échecs, continue » : le rollup ne s'arrêtera plus que sur
+        # un échec NOUVEAU (sinon il re-suspendrait aussitôt). Réassignation : JSONB muté en
+        # place n'est pas détecté par SQLAlchemy.
+        dep.strategy_params = {**dep.strategy_params, "acknowledged_failures": failed}
     await db.commit()
     await db.refresh(dep)
     tgt_ids = [t.id_player for t in targets if t.status in ota._IN_FLIGHT]

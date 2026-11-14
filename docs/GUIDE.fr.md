@@ -351,6 +351,33 @@ workflow GitHub Actions `Release players` les construit et publie une release. P
 voir [Android : votre propre clé de signature](#android--votre-propre-clé-de-signature) : une
 mise à jour doit être signée avec **la même clé** que l'application installée.
 
+### Le moteur Electron (players Linux, Raspberry Pi et Windows)
+
+Une mise à jour du player change son code, jamais son moteur Electron. Le moteur se met à jour à
+part, depuis **Réglages → Mises à jour → Moteur Electron** :
+
+1. **L'exploitant du serveur** (super-admin, ou l'admin d'org d'un serveur qui n'en a pas) saisit
+   une version d'Electron (par exemple `42.11.18`, voir [releases.electronjs.org](https://releases.electronjs.org)),
+   coche les plateformes et clique **Récupérer**. Le serveur télécharge la version officielle
+   d'Electron, la vérifie contre le `SHASUMS256.txt` publié par Electron, la reconditionne et la
+   stocke. Elle arrive en **bêta**. Les players ne téléchargent jamais rien sur Internet.
+2. **Chaque admin d'organisation** la déploie sur ses propres écrans, depuis le même tiroir :
+   cible, fenêtres horaires si besoin, puis **Déployer**. Un moteur bêta ne s'essaie que sur **un
+   seul player** à la fois. Une fois **promu** par l'exploitant, il peut partir sur des groupes, des
+   sites ou toute l'organisation.
+3. Le player télécharge le moteur, le vérifie, l'extrait à côté de l'actuel, puis passe la main à
+   un petit garde et s'arrête. Le garde bascule les moteurs et relance le player. Le nouveau
+   moteur doit confirmer son affichage en moins de **5 minutes** ; sinon le garde remet seul
+   l'ancien moteur, et le déploiement s'arrête au premier échec.
+
+Une coupure de courant pendant la bascule est reprise au démarrage suivant (les lanceurs exécutent
+le `boot-check` du garde avant Electron). Le garde écrit son journal dans
+`node_modules/electron/engine-guard.log`, dans le dossier du player.
+
+Les players installés avant cette fonction doivent voir leur lanceur rafraîchi une fois (relancer
+le `install.sh` / `install.ps1` du player) pour avoir la vérification au démarrage et, sous Linux,
+un moteur appartenant au compte du player.
+
 ## 8. Assistant Telegram (« Jeanine »)
 
 Vos utilisateurs peuvent parler à Vitrail depuis Telegram : poser des questions sur le réseau

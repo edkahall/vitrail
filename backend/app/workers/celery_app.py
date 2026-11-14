@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.workers.pop_worker",
         "app.workers.promo_worker",
         "app.workers.ota_worker",
+        "app.workers.engine_worker",
         "app.workers.analytics_worker",
         "app.workers.report_worker",
         "app.workers.campaign_worker",
@@ -66,6 +67,7 @@ celery_app.conf.update(
         "app.workers.notification_worker.*": {"queue": "notifications"},
         "app.workers.pop_worker.*": {"queue": "default"},
         "app.workers.ota_worker.*": {"queue": "default"},
+        "app.workers.engine_worker.*": {"queue": "default"},
     },
     beat_schedule={
         # Signalétique du worker média (encodeurs matériels, cœurs, disque de travail)

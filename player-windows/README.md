@@ -38,6 +38,16 @@ Electron player for **Windows 11 Pro** (existing PC turned into a player).
 - Renderer crash: automatic relaunch, except when uptime < 60 s (anti-loop); `gpu_enabled` changed
   live → relaunch.
 
+## Engine updates (Electron)
+
+The Electron engine is updated from the server (**Settings → Updates → Electron engine**), not by
+the code update. `src/engine_update.js` downloads and checks the engine, extracts it to
+`node_modules/electron/dist.next`, then hands over to `src/engine_guard.js` (run by the system
+`node`, independent of both engines), which switches `dist` → `dist.prev` and `dist.next` → `dist`,
+restarts the player and puts the previous engine back if the new one does not confirm rendering
+within 5 minutes. The launcher runs `engine_guard.js boot-check` before Electron (power cut during
+a switch). Log: `node_modules/electron/engine-guard.log`. The guard starts `dist\electron.exe` directly (not through the scheduled task: `schtasks /run` asked from the guard started nothing). A first failure on Windows can come from the environment (antivirus scanning a new unsigned engine): the rollback absorbs it.
+
 ## Config
 
 `%APPDATA%\signflow-player-windows\config.json` — directory = `app.getPath('userData')`,

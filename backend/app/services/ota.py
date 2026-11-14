@@ -35,6 +35,15 @@ from app.services.targeting import Target, players_for_targets
 # `player_os` (linux-x64, linux-arm64, android-armeabi-v7a…). Un bundle sert
 # PLUSIEURS player_os — la correspondance ne peut donc pas être une simple égalité.
 BUNDLE_PLATFORMS = {"linux", "rpi", "windows", "android"}
+
+# Piste du MOTEUR Electron (issue vitrail#5). Une version `engine` a pour `model_family` le
+# `player_os` EXACT de ses players (le filtre d'égalité de `create_deployment` les cible donc
+# déjà) et pour version la version d'Electron. Elle voyage dans sa PROPRE clé du payload
+# (`engine_update`) : la clé historique `update` ne doit JAMAIS en porter une — un player
+# actuel la prendrait pour un bundle de code (« 42.11.18 » > sa 1.6.x) et extrairait le
+# moteur par-dessus son application.
+ENGINE_TRACK = "engine"
+ENGINE_FAMILIES = {"linux-arm64", "linux-x64", "windows"}
 # player_os → plateforme de bundle autorisée (garde anti-mismatch, incident 2026-07-06 :
 # un player linux qui télécharge un bundle windows l'installe par-dessus son code).
 # Android (2026-07-19) : toutes les ABI partagent le même APK universel → un seul artefact.
@@ -157,6 +166,8 @@ async def parc_inventory(db: AsyncSession, id_org: int) -> list[dict]:
             "status": p.status, "current_version": cur, "latest_version": latest_ver,
             "update_state": state, "up_to_date": state == "up_to_date",
             "renderer_degraded": degraded,
+            # Moteur Electron courant (vitrail#5) : None pour les players non Electron.
+            "electron_version": engine_version_of(caps),
             "id_latest_version": latest.id_version if latest else None,
             "site": sites.get(p.id_site) if p.id_site else None,
             "groups": sorted(groups_by_player.get(p.id_player, [])),
@@ -208,6 +219,15 @@ async def resolve_renderer_version(db: AsyncSession, player: CmsPlayer) -> str |
     return served_player_versions().get(platform)
 
 
+class DeploymentInFlight(Exception):
+    """La même version est déjà en cours de déploiement vers au moins un des players visés."""
+
+    def __init__(self, player_names: list[str]):
+        self.player_names = player_names
+        names = ", ".join(sorted(set(player_names))[:5]) + ("…" if len(set(player_names)) > 5 else "")
+        super().__init__(f"This version is already being deployed to: {names}.")
+
+
 async def create_deployment(
     db: AsyncSession, id_org: int, id_version: int, targets: list[Target],
     strategy: str, strategy_params: dict, id_user: int,
@@ -240,6 +260,24 @@ async def create_deployment(
                 CmsPlayer.id_player.in_(player_ids), os_filter,
             )
         )).scalars().all())
+    # ── Doublon : la même version déjà en cours vers un de ces players (retour Ed 14/11 : le
+    # bouton ne montrait rien, 4 clics = 4 déploiements identiques). Refusé EN NOMMANT les players.
+    if player_ids:
+        dup = (await db.execute(
+            select(CmsPlayer.player_name, CmsPlayer.id_player)
+            .join(CmsUpdateDeploymentTarget, CmsUpdateDeploymentTarget.id_player == CmsPlayer.id_player)
+            .join(CmsUpdateDeployment,
+                  CmsUpdateDeployment.id_deployment == CmsUpdateDeploymentTarget.id_deployment)
+            .where(
+                CmsUpdateDeployment.id_version == id_version,
+                CmsUpdateDeployment.status.in_(("pending", "in_progress", "paused")),
+                CmsUpdateDeploymentTarget.status.in_(_IN_FLIGHT),
+                CmsUpdateDeploymentTarget.id_player.in_(player_ids),
+            )
+        )).all()
+        if dup:
+            raise DeploymentInFlight([n or f"#{i}" for n, i in dup])
+
     # ── Décision 2 « canal unique » : orchestration firmware → renderer (BrightSign) ──
     # Une version renderer BS peut exiger un BOS minimum. Les cibles SOUS le minimum reçoivent
     # d'abord le firmware ÉPINGLÉ de leur famille (poussé ici même) ; la garde de
@@ -279,10 +317,16 @@ async def create_deployment(
             for pinned, plist in firmware_pushes:
                 await fw.stage_push(db, id_org, id_user, pinned, plist)
 
+    # Moteur (vitrail#5, décision D3) : arrêt au PREMIER échec ou retour arrière, sauf refus
+    # explicite. Un moteur qui casse un écran ne doit pas partir sur les suivants.
+    strategy_params = dict(strategy_params or {})
+    if version is not None and version.track == ENGINE_TRACK:
+        strategy_params.setdefault("stop_on_failure", True)
+
     now = datetime.now(UTC).replace(tzinfo=None)   # colonne TIMESTAMP naïf (asyncpg)
     dep = CmsUpdateDeployment(
         id_org=id_org, id_version=id_version, approved_by=id_user, approved_at=now,
-        strategy=strategy, strategy_params=strategy_params or {},
+        strategy=strategy, strategy_params=strategy_params,
         status="pending", total_targets=len(player_ids),
     )
     db.add(dep)
@@ -291,10 +335,14 @@ async def create_deployment(
     versions = {}
     if player_ids:
         rows = (await db.execute(
-            select(CmsPlayer.id_player, CmsPlayer.player_version)
+            select(CmsPlayer.id_player, CmsPlayer.player_version, CmsPlayer.capabilities)
             .where(CmsPlayer.id_player.in_(player_ids))
         )).all()
-        versions = {pid: ver for pid, ver in rows}
+        if version is not None and version.track == ENGINE_TRACK:
+            # Base du retour arrière d'un moteur = l'Electron COURANT, pas la version du code.
+            versions = {pid: engine_version_of(caps) for pid, _ver, caps in rows}
+        else:
+            versions = {pid: ver for pid, ver, _caps in rows}
     for pid in player_ids:
         db.add(CmsUpdateDeploymentTarget(
             id_deployment=dep.id_deployment, id_player=pid, status="pending",
@@ -331,7 +379,23 @@ async def deployment_targets(
 _IN_FLIGHT = ("pending", "queued", "downloading", "staged", "installing")
 
 
-async def directive_for_player(db: AsyncSession, id_player: int) -> dict | None:
+def engine_version_of(capabilities: dict | None) -> str | None:
+    """Version d'Electron remontée par le player dans ses `capabilities` (heartbeat)."""
+    v = (capabilities or {}).get("electron_version") if isinstance(capabilities, dict) else None
+    return str(v) if v else None
+
+
+def _track_filter(track: str | None):
+    """`engine` → la seule piste moteur ; sinon → TOUT SAUF le moteur (comportement historique
+    de la clé `update` : piste player, et firmware BrightSign qui l'emprunte aussi)."""
+    if track == ENGINE_TRACK:
+        return CmsPlayerUpdateVersion.track == ENGINE_TRACK
+    return CmsPlayerUpdateVersion.track != ENGINE_TRACK
+
+
+async def directive_for_player(
+    db: AsyncSession, id_player: int, track: str | None = None
+) -> dict | None:
     """Directive `update` à joindre au sync payload d'un player : sa cible de déploiement
     ACTIONNABLE, ou None. Émise tant que la cible est **non terminale** (le player s'en sert de
     source de vérité pour piloter download→staged→install ; si elle disparaît = annulée/terminée →
@@ -349,6 +413,7 @@ async def directive_for_player(db: AsyncSession, id_player: int) -> dict | None:
             CmsUpdateDeploymentTarget.id_player == id_player,
             CmsUpdateDeploymentTarget.status.in_(_IN_FLIGHT),
             CmsUpdateDeployment.status.in_(("pending", "in_progress")),
+            _track_filter(track),
         )
         .order_by(CmsUpdateDeployment.created_at.desc())
     )).first()
@@ -403,6 +468,7 @@ async def mark_success_if_updated(
             CmsUpdateDeploymentTarget.id_player == id_player,
             CmsUpdateDeploymentTarget.status.in_(_IN_FLIGHT),
             CmsUpdateDeployment.status.in_(("pending", "in_progress", "paused")),
+            _track_filter(None),   # la version du CODE ne dit rien du moteur
         )
     )).all()
     now = datetime.now(UTC).replace(tzinfo=None)
@@ -416,6 +482,43 @@ async def mark_success_if_updated(
         await db.flush()
     return list(changed)
 
+
+async def mark_engine_success(
+    db: AsyncSession, id_player: int, electron_version: str | None
+) -> list[int]:
+    """Succès d'un déploiement MOTEUR, constaté au heartbeat : l'Electron remonté par le player
+    est EXACTEMENT la version cible. Égalité et non « >= » : une descente de version doit
+    réussir aussi (retour à une version sûre). Renvoie les id_deployment modifiés."""
+    if not electron_version:
+        return []
+    rows = (await db.execute(
+        select(CmsUpdateDeploymentTarget, CmsPlayerUpdateVersion.version)
+        .join(CmsUpdateDeployment,
+              CmsUpdateDeployment.id_deployment == CmsUpdateDeploymentTarget.id_deployment)
+        .join(CmsPlayerUpdateVersion,
+              CmsPlayerUpdateVersion.id_version == CmsUpdateDeployment.id_version)
+        .where(
+            CmsUpdateDeploymentTarget.id_player == id_player,
+            CmsUpdateDeploymentTarget.status.in_(_IN_FLIGHT),
+            CmsUpdateDeployment.status.in_(("pending", "in_progress", "paused")),
+            _track_filter(ENGINE_TRACK),
+        )
+    )).all()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    changed: set[int] = set()
+    for target, target_version in rows:
+        if str(electron_version).strip() == str(target_version).strip():
+            target.status = "success"
+            target.completed_at = now
+            changed.add(target.id_deployment)
+    if changed:
+        await db.flush()
+    return list(changed)
+
+
+# Statuts qu'un player a le droit de remonter (`update:status`). `rolled_back` : le moteur
+# essayé n'a pas rendu dans le délai, le player est revenu SEUL sur l'ancien (vitrail#5).
+REPORTABLE_STATUSES = ("downloading", "staged", "installing", "success", "failed", "rolled_back")
 
 _TERMINAL_TARGET = ("success", "failed", "cancelled", "rolled_back")
 
@@ -442,9 +545,9 @@ async def report_target(
     # (fenêtre de download, attente de la fenêtre de maintenance) sans jamais timeouter.
     if new_status == "installing":
         tgt.started_at = now
-    if new_status in ("success", "failed"):
+    if new_status in ("success", "failed", "rolled_back"):
         tgt.completed_at = now
-        if new_status == "failed":
+        if new_status in ("failed", "rolled_back"):
             tgt.error_message = (error or "")[:1000]
     await db.flush()
     return True

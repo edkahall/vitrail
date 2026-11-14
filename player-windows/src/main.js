@@ -12,6 +12,7 @@ const { createDisplayController } = require('./display_control');
 const { LanSyncController }       = require('./sync_lan');
 const { LocalControlServer }      = require('./local_control_server');
 const { ContentStore }            = require('./content_store');
+const { EngineUpdater }           = require('./engine_update');
 const { VodLanController }        = require('./vod_lan');
 
 // Schéma signflow:// pour servir les octets du store local au renderer (offline-first
@@ -1541,6 +1542,39 @@ function _otaFail(id_deployment, msg, tmp) {
   _otaInProgress = false;
 }
 
+// ── Moteur Electron mis à jour depuis le serveur (issue vitrail#5) ──────────────
+// Module partagé à l'identique par les 3 players Electron (engine_update.js + engine_guard.js).
+// Directive dans la clé `engine_update` du sync (JAMAIS `update`, qui ne porte que le code).
+let _engineUpdater = null;
+let _engineTimer = null;
+function _sendEngineStatus(id_deployment, status, error) {
+  try {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'update:status', id_deployment, status, error: error || undefined }));
+      return true;
+    }
+  } catch {}
+  return false;
+}
+function getEngineUpdater() {
+  if (!_engineUpdater) {
+    _engineUpdater = new EngineUpdater({
+      appRoot: config.update_app_dir || path.join(__dirname, '..'),
+      userData: app.getPath('userData'),
+      platform: 'windows',
+      electronVersion: process.versions.electron,
+      getConfig: () => config,
+      saveConfig: () => saveConfig(),
+      sendStatus: _sendEngineStatus,
+      log: (m) => _writeLog('engine', m),
+      quit: () => app.exit(0),
+      inWindow: (w) => _inWindow(w),
+    });
+  }
+  if (!_engineTimer) _engineTimer = setInterval(() => _engineUpdater.tick(), 60 * 1000);
+  return _engineUpdater;
+}
+
 function handleServerMessage(msg) {
   switch (msg.type) {
     case 'player:sync':
@@ -1560,6 +1594,8 @@ function handleServerMessage(msg) {
       if (msg.vod_lan !== undefined) { _vodLan = (msg.vod_lan && typeof msg.vod_lan === 'object') ? msg.vod_lan : null; manageVodLan(); }
       // OTA §XXX slice 2 : directive de mise à jour (indépendante du download gate ci-dessous).
       if (msg.update) handleUpdateDirective(msg.update);
+      // Moteur (vitrail#5) : clé présente seulement sur un serveur qui la connaît ; null = rien à faire.
+      if ('engine_update' in msg) getEngineUpdater().handle(msg.engine_update);
 
       // Download-then-play STRICT (anti-stream auto) : retenir tant que les vidéos ne sont pas
       // toutes cachées — le renderer garde le programme courant ; onReady forwarde quand prêt.
@@ -1942,6 +1978,8 @@ function buildCapabilities() {
   if (panelMm) caps.panel_mm = panelMm;       // EDID → pré-remplissage dalle dans l'éditeur de mur
   // État du store offline-first (Q4 inventaire : disque %, pression, nb médias).
   if (contentStore) caps.store = contentStore.getStorageStatus();
+  // Version du moteur : c'est elle qui fait constater au serveur le succès d'une MAJ moteur.
+  caps.electron_version = process.versions.electron;
   return Object.keys(caps).length ? caps : undefined;
 }
 
@@ -2166,6 +2204,8 @@ app.whenReady().then(() => {
     }
   }, 2000);
   mainWindow.webContents.once('did-finish-load', () => {
+    // Moteur en essai (vitrail#5) : confirmer le rendu 60 s après le chargement du renderer.
+    try { getEngineUpdater().onRendererLoaded(); } catch (e) { _writeLog('engine', `confirm: ${e.message}`); }
     // Charger la config ecran persistee pour le power schedule offline.
     // ROBUSTESSE : isole de la connexion WS — un echec d'application du cache
     // ne doit JAMAIS empecher le player de se connecter au serveur.

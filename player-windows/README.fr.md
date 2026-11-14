@@ -38,6 +38,16 @@ Player Electron pour **Windows 11 Pro** (PC existant transformé en player).
 - Crash renderer : relaunch auto, sauf uptime < 60 s (anti-boucle) ; `gpu_enabled` changé à
   chaud → relaunch.
 
+## Mises à jour du moteur (Electron)
+
+Le moteur Electron se met à jour depuis le serveur (**Réglages → Mises à jour → Moteur Electron**),
+pas par la mise à jour du code. `src/engine_update.js` télécharge et vérifie le moteur, l'extrait
+dans `node_modules/electron/dist.next`, puis passe la main à `src/engine_guard.js` (exécuté par le
+`node` système, indépendant des deux moteurs), qui bascule `dist` → `dist.prev` et `dist.next` →
+`dist`, relance le player et remet l'ancien moteur si le nouveau ne confirme pas son affichage en
+5 minutes. Le lanceur exécute `engine_guard.js boot-check` avant Electron (coupure pendant une
+bascule). Journal : `node_modules/electron/engine-guard.log`. Le garde lance `dist\electron.exe` directement (pas par la tâche planifiée : `schtasks /run` demandé depuis le garde ne lançait rien). Un premier échec sous Windows peut venir de l'environnement (antivirus qui analyse un nouveau moteur non signé) : le retour arrière l'absorbe.
+
 ## Config
 
 `%APPDATA%\signflow-player-windows\config.json` — répertoire = `app.getPath('userData')`,

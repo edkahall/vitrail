@@ -47,6 +47,16 @@ Player Electron pour **Raspberry Pi 4/5 sous Raspberry Pi OS Trixie (Debian 13, 
   watchdog matériel kernel ; `--overlay` = rootfs overlay (protège la carte SD).
 - NTP : chrony, rôle serveur/client choisi à l'install, re-pilotable depuis le CMS.
 
+## Mises à jour du moteur (Electron)
+
+Le moteur Electron se met à jour depuis le serveur (**Réglages → Mises à jour → Moteur Electron**),
+pas par la mise à jour du code. `src/engine_update.js` télécharge et vérifie le moteur, l'extrait
+dans `node_modules/electron/dist.next`, puis passe la main à `src/engine_guard.js` (exécuté par le
+`node` système, indépendant des deux moteurs), qui bascule `dist` → `dist.prev` et `dist.next` →
+`dist`, relance le player et remet l'ancien moteur si le nouveau ne confirme pas son affichage en
+5 minutes. Le lanceur exécute `engine_guard.js boot-check` avant Electron (coupure pendant une
+bascule). Journal : `node_modules/electron/engine-guard.log`. `install.sh` donne `node_modules` au compte du player (aucun root pour changer de moteur) ; la garde de résolution de `start-player.sh` ne tue qu'Electron, jamais le garde moteur.
+
 ## Config
 
 `~/.config/signflow-player-rpi/config.json` — le répertoire est **dérivé du `name` de

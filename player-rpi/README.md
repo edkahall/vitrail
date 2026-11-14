@@ -46,6 +46,16 @@ Electron player for **Raspberry Pi 4/5 on Raspberry Pi OS Trixie (Debian 13, arm
   kernel hardware watchdog; `--overlay` = rootfs overlay (protects the SD card).
 - NTP: chrony, server/client role chosen at install, can be re-driven from the CMS.
 
+## Engine updates (Electron)
+
+The Electron engine is updated from the server (**Settings → Updates → Electron engine**), not by
+the code update. `src/engine_update.js` downloads and checks the engine, extracts it to
+`node_modules/electron/dist.next`, then hands over to `src/engine_guard.js` (run by the system
+`node`, independent of both engines), which switches `dist` → `dist.prev` and `dist.next` → `dist`,
+restarts the player and puts the previous engine back if the new one does not confirm rendering
+within 5 minutes. The launcher runs `engine_guard.js boot-check` before Electron (power cut during
+a switch). Log: `node_modules/electron/engine-guard.log`. `install.sh` gives `node_modules` to the player account (no root needed to switch engines); the resolution guard of `start-player.sh` only kills Electron, never the engine guard.
+
 ## Config
 
 `~/.config/signflow-player-rpi/config.json` — the directory is **derived from the `name` in

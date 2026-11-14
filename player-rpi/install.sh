@@ -91,6 +91,10 @@ apt-get install -y --no-install-recommends \
 echo "[3/7] Installing npm dependencies (ARM64)..."
 cd "$PLAYER_DIR"
 npm install --omit=dev
+# Le moteur Electron appartient au compte du player (vitrail#5, décision D7) : c'est le player
+# lui-même qui le remplace depuis le serveur, sans aucun chemin vers root. Aucun privilège
+# nouveau : ce compte réécrit déjà `src/` à chaque mise à jour du code.
+chown -R "$SERVICE_USER:$SERVICE_USER" "$PLAYER_DIR/node_modules"
 
 # ── 4. User + autologin ───────────────────────────────────────────────────────
 echo "[4/7] Configuring user and autologin..."
@@ -158,10 +162,16 @@ _target_res="\${WLR_MODE%@*}"   # 1920x1080@60 -> 1920x1080
     _g_cur=\$(wlr-randr 2>/dev/null | grep -i current | grep -oiP '[0-9]+x[0-9]+' | head -1)
     if [[ -n "\$_g_cur" && "\$_g_cur" != "\$_target_res" ]]; then
       echo "[\$(date -Iseconds)] Guard: mode drifted to \$_g_cur, restarting player to recover \$WLR_MODE" >> "\$LOG"
-      pkill -f 'SignFlow/player-rpi'   # watchdog re-forces FHD + relaunches with a correctly sized window
+      # Target ELECTRON only: 'SignFlow/player-rpi' also matched the engine guard
+      # (src/engine_guard.js) and killed it in the middle of an engine trial (14/11).
+      pkill -f '$PLAYER_DIR/node_modules/electron/dist/electron'   # watchdog re-forces FHD + relaunches
     fi
   done
 ) &
+
+# Engine trial interrupted by a power cut (vitrail#5): repair an unfinished switch and re-arm the
+# rollback guard BEFORE the first Electron start. Once per session, never blocks the launch.
+node "$PLAYER_DIR/src/engine_guard.js" boot-check --app-root "$PLAYER_DIR" --platform rpi >> "\$LOG" 2>&1 || true
 
 while true; do
   # Auto-detect output if WLR_OUTPUT not set at install time

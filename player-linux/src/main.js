@@ -12,6 +12,7 @@ const { createDisplayController } = require('./display_control');
 const { LanSyncController }       = require('./sync_lan');
 const { LocalControlServer }      = require('./local_control_server');
 const { ContentStore }            = require('./content_store');
+const { EngineUpdater }           = require('./engine_update');
 const { VodLanController }        = require('./vod_lan');
 const { MpvController }            = require('./mpv_controller');
 
@@ -1651,6 +1652,39 @@ function _otaFail(id_deployment, msg, tmp) {
   _otaInProgress = false;
 }
 
+// ── Moteur Electron mis à jour depuis le serveur (issue vitrail#5) ──────────────
+// Module partagé à l'identique par les 3 players Electron (engine_update.js + engine_guard.js).
+// Directive dans la clé `engine_update` du sync (JAMAIS `update`, qui ne porte que le code).
+let _engineUpdater = null;
+let _engineTimer = null;
+function _sendEngineStatus(id_deployment, status, error) {
+  try {
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'update:status', id_deployment, status, error: error || undefined }));
+      return true;
+    }
+  } catch {}
+  return false;
+}
+function getEngineUpdater() {
+  if (!_engineUpdater) {
+    _engineUpdater = new EngineUpdater({
+      appRoot: config.update_app_dir || path.join(__dirname, '..'),
+      userData: app.getPath('userData'),
+      platform: 'linux',
+      electronVersion: process.versions.electron,
+      getConfig: () => config,
+      saveConfig: () => saveConfig(),
+      sendStatus: _sendEngineStatus,
+      log: (m) => _writeLog('engine', m),
+      quit: () => { if (typeof mpv !== 'undefined' && mpv) { try { mpv.quit(); } catch {} } app.exit(0); },
+      inWindow: (w) => _inWindow(w),
+    });
+  }
+  if (!_engineTimer) _engineTimer = setInterval(() => _engineUpdater.tick(), 60 * 1000);
+  return _engineUpdater;
+}
+
 function handleServerMessage(msg) {
   switch (msg.type) {
     case 'player:sync':
@@ -1681,6 +1715,8 @@ function handleServerMessage(msg) {
       }
       // OTA §XXX slice 2 : directive de mise à jour (indépendante du download gate ci-dessous).
       if (msg.update) handleUpdateDirective(msg.update);
+      // Moteur (vitrail#5) : clé présente seulement sur un serveur qui la connaît ; null = rien à faire.
+      if ('engine_update' in msg) getEngineUpdater().handle(msg.engine_update);
 
       // Download-then-play STRICT (anti-stream auto serveur) : tant que TOUTES les vidéos du
       // nouveau contenu ne sont pas en cache local, on RETIENT le sync — le renderer garde le
@@ -2099,6 +2135,8 @@ function buildCapabilities() {
   const panelMm = getPanelMm();
   if (panelMm) caps.panel_mm = panelMm;       // EDID → pré-remplissage dalle dans l'éditeur de mur
   if (contentStore) caps.store = contentStore.getStorageStatus();
+  // Version du moteur : c'est elle qui fait constater au serveur le succès d'une MAJ moteur.
+  caps.electron_version = process.versions.electron;
   // Mode mpv (HW VAAPI hors Chromium) : le décodage matériel EST actif via mpv, alors que
   // capabilities.json (mesuré côté Chromium) le marque inactif sur Intel/Linux. On le reflète
   // dans le heartbeat → (a) badge "Matériel" côté CMS, (b) le plafond de rendition logiciel
@@ -2345,6 +2383,8 @@ app.whenReady().then(() => {
   startOfflinePowerScheduler();  // pilote auto-power offline (lit serverDisplayConfig a chaque tick)
   createWindow();
   mainWindow.webContents.once('did-finish-load', () => {
+    // Moteur en essai (vitrail#5) : confirmer le rendu 60 s après le chargement du renderer.
+    try { getEngineUpdater().onRendererLoaded(); } catch (e) { _writeLog('engine', `confirm: ${e.message}`); }
     // Charger la config ecran persistee pour le power schedule offline
     const cachedCfg = loadDisplayConfig();
     if (cachedCfg) {

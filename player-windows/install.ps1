@@ -91,7 +91,9 @@ $taskName = "SignFlow Player"
 # s'il dépasse 10 Mo (vérifié à chaque (re)démarrage de la tâche : boot + relances RestartCount).
 # Le logger applicatif interne (userData\logs\player.log, 2 Mo×2) reste la trace persistante bornée.
 $logPath   = Join-Path $env:USERPROFILE 'signflow-player.log'
-$launchCmd = "if ((Test-Path '$logPath') -and (Get-Item '$logPath').Length -gt 10MB) { Set-Content -LiteralPath '$logPath' -Value '' }; Set-Location '$InstallDir'; node_modules\.bin\electron.cmd . 2>&1 | Out-File -LiteralPath '$logPath' -Append"
+# Engine trial interrupted by a power cut (vitrail#5): engine_guard boot-check repairs an
+# unfinished switch and re-arms the rollback guard BEFORE Electron. Fast, never blocks.
+$launchCmd = "if ((Test-Path '$logPath') -and (Get-Item '$logPath').Length -gt 10MB) { Set-Content -LiteralPath '$logPath' -Value '' }; Set-Location '$InstallDir'; node src\engine_guard.js boot-check --app-root '$InstallDir' --platform windows 2>&1 | Out-File -LiteralPath '$logPath' -Append; node_modules\.bin\electron.cmd . 2>&1 | Out-File -LiteralPath '$logPath' -Append"
 $action    = New-ScheduledTaskAction `
   -Execute "PowerShell.exe" `
   -Argument "-WindowStyle Hidden -NonInteractive -Command `"$launchCmd`""

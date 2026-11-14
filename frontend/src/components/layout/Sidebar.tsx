@@ -173,7 +173,9 @@ const settingsNav: NavItem[] = [
   { href: '/settings/firmware', icon: HardDriveDownload, labelKey: 'nav.firmware', adminOnly: true, platform: true },
   { href: '/settings/feedback', icon: MessageSquare, labelKey: 'nav.feedback', superAdminOnly: true, platform: true },
   { href: '/settings/iam',      icon: Users,        labelKey: 'nav.iam', adminOnly: true },
-  { href: '/settings/updates',  icon: RefreshCw,    labelKey: 'nav.updates', adminOnly: true },
+  // platform : le catalogue des moteurs Electron (récupérer, promouvoir, supprimer) est un geste
+  // de l'exploitant du serveur, comme le firmware (14/11 : le super-admin ne trouvait pas la page).
+  { href: '/settings/updates',  icon: RefreshCw,    labelKey: 'nav.updates', adminOnly: true, platform: true },
   // Meme gate que Firmware : l'EXPLOITANT est filtre cote serveur
   // (`require_server_operator`). Sur un serveur mutualise, un org-admin d'organisation voit
   // l'entree mais recoit 403 — la page le dit, plutot que de masquer sans expliquer.

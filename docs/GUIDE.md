@@ -342,6 +342,33 @@ Web/ChromeOS players, the Chrome extension and BrightSign are updated with the s
 see [Android: your own signing key](#android-your-own-signing-key): an update must be signed
 with the **same key** as the installed app.
 
+### The Electron engine (Linux, Raspberry Pi and Windows players)
+
+A player update changes the player's code, never its Electron engine. The engine is updated on
+its own, from **Settings → Updates → Electron engine**:
+
+1. **The server operator** (super-admin, or the org admin of a server without one) types an
+   Electron version (for example `42.11.18`, see [releases.electronjs.org](https://releases.electronjs.org)),
+   ticks the platforms and clicks **Get**. The server downloads the official Electron release,
+   checks it against the `SHASUMS256.txt` published by Electron, repackages it and stores it.
+   It arrives in **beta**. Players never download anything from the Internet.
+2. **Each org admin** deploys it to their own screens, from the same drawer: choose the
+   target, optional time windows, then **Deploy**. A beta engine can only be tried on **one
+   player** at a time. Once the operator **promotes** it, it can go to groups, sites or the whole
+   organisation.
+3. The player downloads the engine, checks it, extracts it next to the current one, then hands
+   over to a small guard and stops. The guard switches engines and restarts the player. The new
+   engine must confirm it renders within **5 minutes**; otherwise the guard puts the previous
+   engine back on its own, and the deployment stops at the first failure.
+
+A power cut during the switch is handled at the next start (the launchers run the guard's
+`boot-check` before Electron). The guard writes its log to
+`node_modules/electron/engine-guard.log` in the player folder.
+
+Players installed before this feature need their launcher refreshed once (re-run the player's
+`install.sh` / `install.ps1`) to get the start-up check and, on Linux, an engine owned by the
+player account.
+
 ## 8. Telegram assistant (“Jeanine”)
 
 Your users can talk to Vitrail from Telegram: ask about the network, and run actions after

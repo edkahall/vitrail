@@ -39,6 +39,16 @@ the display manager).
   clients; can be re-driven from the CMS.
 - Firewall: UDP 7778 (LAN sync) + 7779 (VOD trigger) allowed if UFW is active.
 
+## Engine updates (Electron)
+
+The Electron engine is updated from the server (**Settings → Updates → Electron engine**), not by
+the code update. `src/engine_update.js` downloads and checks the engine, extracts it to
+`node_modules/electron/dist.next`, then hands over to `src/engine_guard.js` (run by the system
+`node`, independent of both engines), which switches `dist` → `dist.prev` and `dist.next` → `dist`,
+restarts the player and puts the previous engine back if the new one does not confirm rendering
+within 5 minutes. The launcher runs `engine_guard.js boot-check` before Electron (power cut during
+a switch). Log: `node_modules/electron/engine-guard.log`. `install.sh` gives `node_modules` to the player account (no root needed to switch engines); the guard restarts Electron itself (detached, same environment).
+
 ## Config
 
 `~/.config/signflow-player/config.json` — directory **derived from the `name` in `package.json`**

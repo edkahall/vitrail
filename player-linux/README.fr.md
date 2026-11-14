@@ -39,6 +39,16 @@ le display manager).
   clientes ; re-pilotable depuis le CMS.
 - Pare-feu : UDP 7778 (LAN sync) + 7779 (trigger VOD) autorisés si UFW actif.
 
+## Mises à jour du moteur (Electron)
+
+Le moteur Electron se met à jour depuis le serveur (**Réglages → Mises à jour → Moteur Electron**),
+pas par la mise à jour du code. `src/engine_update.js` télécharge et vérifie le moteur, l'extrait
+dans `node_modules/electron/dist.next`, puis passe la main à `src/engine_guard.js` (exécuté par le
+`node` système, indépendant des deux moteurs), qui bascule `dist` → `dist.prev` et `dist.next` →
+`dist`, relance le player et remet l'ancien moteur si le nouveau ne confirme pas son affichage en
+5 minutes. Le lanceur exécute `engine_guard.js boot-check` avant Electron (coupure pendant une
+bascule). Journal : `node_modules/electron/engine-guard.log`. `install.sh` donne `node_modules` au compte du player (aucun root pour changer de moteur) ; le garde relance Electron lui-même (détaché, même environnement).
+
 ## Config
 
 `~/.config/signflow-player/config.json` — répertoire **dérivé du `name` de `package.json`**

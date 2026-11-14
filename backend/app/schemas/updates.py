@@ -32,6 +32,18 @@ class UpdateVersionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class EngineFetchRequest(BaseModel):
+    """Récupérer un moteur Electron officiel (vitrail#5) pour une ou plusieurs plateformes."""
+    version: str                          # version Electron, ex. 42.11.18
+    families: list[str]                   # linux-arm64 | linux-x64 | windows
+
+
+class EngineFetchJob(BaseModel):
+    job_id: str
+    family: str
+    version: str
+
+
 class UpdateVersionPatch(BaseModel):
     """Seul champ éditable après coup : le BOS minimum d'un renderer BrightSign (décision 2
     « canal unique »). Le flux réel crée la ligne par `served-versions/register`, SANS minimum —
