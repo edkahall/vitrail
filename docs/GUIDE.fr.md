@@ -376,7 +376,13 @@ le `boot-check` du garde avant Electron). Le garde écrit son journal dans
 
 Les players installés avant cette fonction doivent voir leur lanceur rafraîchi une fois (relancer
 le `install.sh` / `install.ps1` du player) pour avoir la vérification au démarrage et, sous Linux,
-un moteur appartenant au compte du player.
+un moteur appartenant au compte du player. D'ici là, ils **refusent** la mise à jour du moteur
+(signalée « launcher not updated ») : sans la vérification au démarrage, une coupure au mauvais
+moment pourrait laisser l'écran noir.
+
+Le déploiement n'est déclaré réussi que lorsque le player signale que son essai s'est bien terminé
+**et** que la version d'Electron qu'il remonte est la cible ; une version remontée pendant l'essai
+ne compte pas.
 
 ## 8. Assistant Telegram (« Jeanine »)
 

@@ -14,6 +14,7 @@ et d'une famille en liste fermée — aucune URL fournie par l'utilisateur. Les 
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import os
 import posixpath
@@ -135,7 +136,10 @@ def zip_to_targz(zip_path: str, out_path: str, version: str) -> None:
             raise EngineImportError("Not an Electron runtime archive (no `version` file).")
         if zf.read("version").decode("utf-8", "replace").strip().lstrip("v") != version:
             raise EngineImportError("The archive's `version` file does not match.")
-        with tarfile.open(out_path, "w:gz") as tar:
+        # Date gzip FIXE : deux reconditionnements du même zip donnent les mêmes octets (revue du
+        # 14/11 : la date du jour dans l'en-tête gzip changeait la somme à chaque récupération).
+        with open(out_path, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz, \
+                tarfile.open(fileobj=gz, mode="w") as tar:
             for zi in infos:
                 name = zi.filename
                 norm = posixpath.normpath(name)

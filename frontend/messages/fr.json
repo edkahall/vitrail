@@ -1483,7 +1483,8 @@
       "tz_hint": "Changer le fuseau relance l'app du player (les horaires offline suivent l'horloge du device).",
       "tz_sent": "Commande envoyée - le player redémarre et remonte son nouveau fuseau sous une minute environ.",
       "tz_pending": "Commande envoyée - en attente du redémarrage du player et de la remontée de {tz}...",
-      "tz_applied": "Fuseau {tz} appliqué et confirmé par le player."
+      "tz_applied": "Fuseau {tz} appliqué et confirmé par le player.",
+      "electron": "Electron"
     },
     "firmware": {
       "title": "Firmware",

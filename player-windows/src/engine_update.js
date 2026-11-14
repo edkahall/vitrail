@@ -27,7 +27,9 @@ const guard = require('./engine_guard');
 
 const OK_DELAY_MS = 60 * 1000;
 const MAX_ATTEMPTS = 2;
-const SPACE_FACTOR = 2.5;
+// Pic réel : l'archive + le moteur extrait (≈ 2,7 × l'archive) + l'ancien moteur conservé pour le
+// retour. 2,5 était trop bas (revue du 14/11) ; un disque plein casse l'OS de l'appareil.
+const SPACE_FACTOR = 4;
 
 // Sous Windows, le `tar.exe` du système (bsdtar, lit les .tar.gz, connaît --strip-components) —
 // jamais un GNU tar d'outillage passé devant dans le PATH, qui prend « C:\… » pour un hôte distant.
@@ -92,11 +94,12 @@ class EngineUpdater {
     }
     const prev = this.state;
     const staged = !!(prev && prev.version === d.version && prev.staged);
+    const failed = !!(prev && prev.id_deployment === d.id_deployment && prev.failed);
     this.getConfig().engine_ota = {
       id_deployment: d.id_deployment, version: String(d.version),
       url: d.download_url || '', sha256: d.sha256 || '',
       download_window: d.download_window || null, install_window: d.install_window || null,
-      force: d.force === true, staged,
+      force: d.force === true, staged, failed,
     };
     this.saveConfig();
     this.tick();
@@ -104,7 +107,7 @@ class EngineUpdater {
 
   tick() {
     const s = this.state;
-    if (!s || this.busy) return;
+    if (!s || this.busy || s.failed) return;
     if (s.staged && fs.existsSync(this._paths().staged)) {
       if (s.force || this.inWindow(s.install_window)) this.install();
     } else if (s.force || this.inWindow(s.download_window)) {
@@ -116,7 +119,14 @@ class EngineUpdater {
     const s = this.state;
     if (file) { try { fs.unlinkSync(file); } catch {} }
     this.log(`engine update failed: ${msg}`);
-    if (s) this.sendStatus(s.id_deployment, 'failed', String(msg).slice(0, 500));
+    if (s) {
+      this.sendStatus(s.id_deployment, 'failed', String(msg).slice(0, 500));
+      // Plus de nouvel essai pour CE déploiement (revue du 14/11 : un téléchargement raté
+      // repartait chaque minute, ~100 Mo à chaque fois). Le serveur l'a passé en échec ; un
+      // nouveau déploiement porte un autre id et repart de zéro.
+      s.failed = true;
+      this.saveConfig();
+    }
     this.busy = false;
   }
 
@@ -191,6 +201,13 @@ class EngineUpdater {
     this.saveConfig();
     const { staged, engine } = this._paths();
     const next = path.join(engine, 'dist.next');
+    // Sans la vérification au démarrage du lanceur (players posés avant cette fonction), une
+    // coupure au mauvais moment laisserait l'écran noir : on refuse en le disant (revue du 14/11).
+    if (!fs.existsSync(guard.launcherMarkerPath(this.appRoot))) {
+      return this._fail('launcher not updated: re-run install.sh / install.ps1 once (no power-cut protection)');
+    }
+    // Le moteur rejeté d'un essai précédent n'est plus utile : il libère la place avant le contrôle.
+    try { fs.rmSync(path.join(engine, 'dist.bad'), { recursive: true, force: true }); } catch {}
     // Place : l'archive + le moteur extrait + l'ancien moteur conservé pour le retour.
     try {
       const need = fs.statSync(staged).size * SPACE_FACTOR;
@@ -254,7 +271,11 @@ class EngineUpdater {
   reportOutcome() {
     const t = guard.readTrial(this.appRoot);
     if (!t) return;
-    if (t.status === 'ok') {          // le succès, le serveur le constate par la version remontée
+    if (t.status === 'ok') {
+      // Essai conclu : on le SIGNALE (revue du 14/11 — le serveur ne compte plus le heartbeat, qui
+      // arrive avant toute preuve d'affichage) ; le serveur vérifie la version remontée. Fichier
+      // gardé tant que le signalement n'est pas parti (hors ligne : nouvel essai au sync suivant).
+      if (t.to === this.electronVersion && !this.sendStatus(t.id_deployment, 'success')) return;
       try { fs.unlinkSync(guard.trialPath(this.appRoot)); } catch {}
       try { fs.unlinkSync(guard.okPath(this.appRoot)); } catch {}
       this._clear();

@@ -153,6 +153,7 @@ export default function DeviceInfoSection({ player, t, siteTimezone, onSetTimezo
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-gray-600">
           {player.player_os && <Row label={t('players.device.os')} value={player.player_os} />}
           {player.player_version && <Row label={t('players.device.version')} value={`v${player.player_version}`} />}
+          {caps?.electron_version && <Row label={t('players.device.electron')} value={caps.electron_version} />}
           {player.ip_address && <Row label={t('players.device.ip')} value={player.ip_address} />}
           {player.mac_address && <Row label={t('players.device.mac')} value={player.mac_address} />}
           {deviceTz && (

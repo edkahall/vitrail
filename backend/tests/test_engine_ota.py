@@ -181,28 +181,57 @@ async def test_engine_stop_on_failure_can_be_refused_explicitly(
 # ── 2. Succès constaté par la version d'Electron ─────────────────────────────
 
 
-async def test_engine_success_is_exact_electron_version(
+async def test_engine_success_needs_the_player_report_and_the_exact_electron_version(
     db_session: AsyncSession, org: CmsOrganization, super_admin
 ) -> None:
+    """Revue du 14/11 : le battement de cœur ne déclare plus le succès d'un moteur. Le player
+    signale `success` (essai conclu) et le serveur exige la version d'Electron remontée."""
     user, _ = super_admin
-    p = _player(org)
-    ver = _engine_version("42.11.17")   # DESCENTE depuis 42.11.18
+    p = _player(org)                       # remonte 42.11.18
+    ver = _engine_version("42.11.17")      # DESCENTE vers 42.11.17
     db_session.add_all([p, ver])
     await db_session.commit()
+    pid = p.id_player
     dep = await ota.create_deployment(db_session, org.id_org, ver.id_version,
                                       [Target(target_type="org")], "immediate", {}, user.id_user)
+    dep_id = dep.id_deployment
 
     # La version du CODE ne dit rien du moteur.
-    assert await ota.mark_success_if_updated(db_session, p.id_player, "99.0.0") == []
-    # Toujours l'ancien moteur : pas de succès.
-    assert await ota.mark_engine_success(db_session, p.id_player, "42.11.18") == []
-    # Plus haut que la cible : ce n'est PAS la cible.
-    assert await ota.mark_engine_success(db_session, p.id_player, "43.0.0") == []
-    assert await ota.mark_engine_success(db_session, p.id_player, None) == []
-    # Exactement la cible (une descente) : succès.
-    assert await ota.mark_engine_success(db_session, p.id_player, "42.11.17") == [dep.id_deployment]
-    tgt = (await ota.deployment_targets(db_session, dep.id_deployment))[0]
+    assert await ota.mark_success_if_updated(db_session, pid, "99.0.0") == []
+    # `success` alors que le player est encore sur l'ancien moteur : ignoré.
+    assert not await ota.report_target(db_session, pid, dep_id, "success")
+    # Le player passe en 42.11.17 (capabilities du heartbeat) puis signale `success` : accepté.
+    p.capabilities = {"electron_version": "42.11.17"}
+    await db_session.commit()
+    assert await ota.report_target(db_session, pid, dep_id, "success")
+    tgt = (await ota.deployment_targets(db_session, dep_id))[0]
     assert tgt.status == "success"
+
+
+async def test_rollback_after_the_new_engine_connected_is_recorded(
+    db_session: AsyncSession, org: CmsOrganization, super_admin
+) -> None:
+    """LE scénario de la revue : le nouveau moteur se connecte (son heartbeat remonte la version
+    cible) mais n'affiche rien ; le garde revient à l'ancien. Le retour arrière DOIT compter."""
+    user, _ = super_admin
+    p = _player(org)
+    ver = _engine_version("42.11.17")
+    db_session.add_all([p, ver])
+    await db_session.commit()
+    pid = p.id_player
+    dep = await ota.create_deployment(db_session, org.id_org, ver.id_version,
+                                      [Target(target_type="org")], "immediate", {}, user.id_user)
+    dep_id = dep.id_deployment
+    # Heartbeat du nouveau moteur pendant l'essai : la version cible est remontée…
+    p.capabilities = {"electron_version": "42.11.17"}
+    await db_session.commit()
+    assert await ota.mark_success_if_updated(db_session, pid, "1.6.22") == []
+    tgt = (await ota.deployment_targets(db_session, dep_id))[0]
+    assert tgt.status == "pending"            # …et la cible n'est PAS déclarée réussie.
+    # Pas de rendu : le garde revient à l'ancien, le player le signale.
+    assert await ota.report_target(db_session, pid, dep_id, "rolled_back", "no render")
+    tgt = (await ota.deployment_targets(db_session, dep_id))[0]
+    assert tgt.status == "rolled_back"
 
 
 async def test_engine_version_of_reads_capabilities() -> None:
@@ -244,7 +273,8 @@ def test_ws_accepts_the_shared_reportable_statuses() -> None:
                             "endpoints", "ws.py"), encoding="utf-8").read()
     assert "st not in ota.REPORTABLE_STATUSES" in src
     assert 'payload["engine_update"]' in src
-    assert "mark_engine_success" in src
+    # Revue du 14/11 : plus de succès moteur au battement de cœur.
+    assert "mark_engine_success" not in src
 
 
 def _pg_conn():
@@ -602,13 +632,18 @@ async def test_org_admin_deploys_stable_anywhere_but_beta_only_to_one_player(
             "id_version": ver.id_version, "strategy": "immediate", "strategy_params": {},
             "targets": targets})
 
-    r = await dep(beta, [{"target_type": "player", "target_id": p.id_player}])
+    pid = p.id_player
+    r = await dep(beta, [{"target_type": "player", "target_id": pid}])
     assert r.status_code == 201, r.text
+    first = r.json()["id_deployment"]
     for targets in ([{"target_type": "org"}], [{"target_type": "group", "target_id": 1}],
                     [{"target_type": "player", "target_id": p.id_player},
                      {"target_type": "player", "target_id": p.id_player}]):
         r = await dep(beta, targets)
         assert r.status_code == 403 and "single player" in r.json()["detail"], (targets, r.text)
+    # Un seul moteur en cours par player (revue du 14/11) : on clôt l'essai bêta d'abord.
+    await ota.report_target(db_session, pid, first, "rolled_back", "x")
+    await db_session.commit()
     assert (await dep(stable, [{"target_type": "org"}])).status_code == 201
 
 
@@ -647,9 +682,66 @@ async def test_same_version_cannot_be_deployed_twice_while_in_flight(
     assert first.status_code == 201, first.text
     second = await dep(v17)
     assert second.status_code == 409 and "RPi" in second.json()["detail"], second.text
-    # Une AUTRE version n'est pas un doublon.
-    assert (await dep(v16)).status_code == 201
+    # Une AUTRE version moteur, tant que la première est en cours : refusée aussi (revue n°8).
+    assert (await dep(v16)).status_code == 409
     # Une fois la cible terminée, la même version peut repartir.
     await ota.report_target(db_session, pid, first.json()["id_deployment"], "rolled_back", "x")
     await db_session.commit()
     assert (await dep(v17)).status_code == 201
+
+
+async def test_only_one_engine_update_in_flight_per_player(
+    client: AsyncClient, db_session: AsyncSession, org: CmsOrganization, super_admin,
+) -> None:
+    """Revue du 14/11, n°8 : deux versions moteur différentes vers le même player ⇒ la plus
+    ancienne restait « en cours » à vie (la directive ne sert que la plus récente)."""
+    _, token = super_admin
+    p = _player(org)
+    v17, v16 = _engine_version("42.11.17"), _engine_version("42.11.16")
+    code = CmsPlayerUpdateVersion(track="player", version="1.6.23", model_family="rpi",
+                                  download_url="/x", sha256_checksum="a" * 64)
+    db_session.add_all([p, v17, v16, code])
+    await db_session.commit()
+    pid = p.id_player
+    h = {"Authorization": f"Bearer {token}"}
+
+    def dep(ver):
+        return client.post("/api/v1/updates/deployments", headers=h, json={
+            "id_version": ver.id_version, "strategy": "immediate", "strategy_params": {},
+            "targets": [{"target_type": "player", "target_id": pid}]})
+
+    assert (await dep(v17)).status_code == 201
+    r = await dep(v16)
+    assert r.status_code == 409 and "RPi" in r.json()["detail"], r.text
+    # Une mise à jour du CODE n'est pas concernée.
+    assert (await dep(code)).status_code == 201
+
+
+def test_repackaging_is_reproducible(tmp_path) -> None:
+    """Revue du 14/11, n°2 : deux reconditionnements du même zip donnent les mêmes octets."""
+    import hashlib
+    z = tmp_path / "e.zip"
+    z.write_bytes(_electron_zip())
+    sums = []
+    for i in range(2):
+        out = tmp_path / f"o{i}.tar.gz"
+        engine_import.zip_to_targz(str(z), str(out), "42.11.17")
+        sums.append(hashlib.sha256(out.read_bytes()).hexdigest())
+    assert sums[0] == sums[1]
+
+
+def test_fetching_an_existing_version_does_not_touch_the_archive(monkeypatch) -> None:
+    """Revue du 14/11, n°2 : une version déjà au catalogue n'est ni retéléchargée ni réécrite."""
+    from app.workers import engine_worker
+
+    calls = []
+    monkeypatch.setattr(engine_worker, "_version_exists", lambda v, f: True)
+    monkeypatch.setattr(engine_worker.engine_import, "fetch_and_package",
+                        lambda *a, **k: calls.append("fetch"))
+    monkeypatch.setattr(engine_worker.media, "_stream_upload_sync",
+                        lambda *a, **k: calls.append("upload"))
+    monkeypatch.setattr(engine_worker, "set_job", lambda *a, **k: calls.append(("job", k.get("state"))))
+    res = engine_worker.fetch_engine("0" * 32, "42.11.17", "linux-arm64")
+    assert res == {"job_id": "0" * 32, "created": False}
+    assert "fetch" not in calls and "upload" not in calls
+    assert ("job", "done") in calls

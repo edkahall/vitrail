@@ -367,7 +367,11 @@ A power cut during the switch is handled at the next start (the launchers run th
 
 Players installed before this feature need their launcher refreshed once (re-run the player's
 `install.sh` / `install.ps1`) to get the start-up check and, on Linux, an engine owned by the
-player account.
+player account. Until then they **refuse** an engine update (reported as "launcher not updated"):
+without the start-up check, a power cut at the wrong moment could leave the screen dark.
+
+The deployment is marked successful only when the player reports that its trial ended well **and**
+the Electron version it reports is the target; a version reported during the trial does not count.
 
 ## 8. Telegram assistant (“Jeanine”)
 

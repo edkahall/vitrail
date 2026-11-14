@@ -1483,7 +1483,8 @@
       "tz_hint": "Changing the time zone restarts the player app (offline schedules follow the device clock).",
       "tz_sent": "Time zone command sent - the player restarts and reports its new time zone within about a minute.",
       "tz_pending": "Command sent - waiting for the player to restart and report {tz}...",
-      "tz_applied": "Time zone {tz} applied and confirmed by the player."
+      "tz_applied": "Time zone {tz} applied and confirmed by the player.",
+      "electron": "Electron"
     },
     "firmware": {
       "title": "Firmware",

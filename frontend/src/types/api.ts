@@ -782,6 +782,8 @@ export interface PlayerRead {
 
 /** Capacités HW remontées par le player (écrites par install.sh/ps1 dans capabilities.json). */
 export interface PlayerCapabilities {
+  /** Version du moteur Electron (players Electron seulement), remontée à chaque heartbeat. */
+  electron_version?: string | null
   gpu_vendor?: string | null
   gpu_model?: string | null
   /** vaapi | v4l2 | d3d11 | mediacodec | none */

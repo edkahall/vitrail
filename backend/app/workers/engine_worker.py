@@ -39,6 +39,23 @@ def set_job(job_id: str, **fields) -> None:
         r.close()
 
 
+def _version_exists(version: str, family: str) -> bool:
+    """La version moteur est-elle déjà au catalogue ? (revue du 14/11 : une 2e récupération
+    réécrivait l'archive sous la même clé alors que la ligne gardait l'ANCIENNE somme — tous les
+    players auraient refusé le téléchargement.)"""
+    url = settings.db_worker_url.replace("postgresql+asyncpg://", "postgresql://")
+    conn = psycopg2.connect(url)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM cms_player_update_versions "
+            "WHERE track = 'engine' AND version = %s AND model_family = %s",
+            (version, family))
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
+
+
 def _insert_version(version: str, family: str, sha256: str, size: int, notes: str) -> bool:
     """Ligne catalogue `track='engine'` en `beta` (D3 : banc d'abord, promote ensuite).
     Idempotent par la contrainte unique (track, version, model_family). True si créée."""
@@ -66,6 +83,12 @@ def _insert_version(version: str, family: str, sha256: str, size: int, notes: st
 
 @celery_app.task(name="app.workers.engine_worker.fetch_engine")
 def fetch_engine(job_id: str, version: str, family: str) -> dict:
+    try:
+        if _version_exists(version, family):
+            set_job(job_id, state="done", created=False, version=version, family=family)
+            return {"job_id": job_id, "created": False}
+    except Exception:  # noqa: BLE001 — base injoignable : la récupération échouera plus loin, nommée
+        logger.exception("fetch_engine: catalogue check failed")
     set_job(job_id, state="downloading", version=version, family=family)
     try:
         with tempfile.TemporaryDirectory(prefix="sf-engine-") as wd:

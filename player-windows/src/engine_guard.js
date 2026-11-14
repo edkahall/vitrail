@@ -39,6 +39,9 @@ const OK_FILE = 'engine-ok';
 function engineDir(appRoot) { return path.join(appRoot, 'node_modules', 'electron'); }
 function trialPath(appRoot) { return path.join(engineDir(appRoot), TRIAL_FILE); }
 function okPath(appRoot) { return path.join(engineDir(appRoot), OK_FILE); }
+// Trace laissée par `boot-check` à chaque démarrage : sa présence prouve que le lanceur appelle
+// le garde avant Electron. Sans elle, le player refuse une mise à jour du moteur.
+function launcherMarkerPath(appRoot) { return path.join(engineDir(appRoot), '.launcher-ok'); }
 function monoMs() { return Number(process.hrtime.bigint() / 1000000n); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -167,7 +170,12 @@ function killElectron(appRoot, platform) {
   if (platform === 'windows') {
     spawnSync('taskkill', ['/F', '/T', '/IM', 'electron.exe'], { windowsHide: true });
   } else {
-    spawnSync('pkill', ['-f', path.join(engineDir(appRoot), 'dist', 'electron')]);
+    // SIGTERM puis, 3 s plus tard, SIGKILL : un moteur FIGÉ (exactement ce qu'on garde) peut
+    // ignorer SIGTERM, et on renommerait sinon ses dossiers sous lui (revue du 14/11).
+    const pat = path.join(engineDir(appRoot), 'dist', 'electron');
+    spawnSync('pkill', ['-f', pat]);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    spawnSync('pkill', ['-9', '-f', pat]);
   }
 }
 
@@ -216,6 +224,7 @@ async function watch(appRoot, platform, fx, trialMs, pollMs) {
     if (!t || t.status !== 'pending') return 'gone';
     if (fs.existsSync(okPath(appRoot))) {
       writeTrial(appRoot, { ...t, status: 'ok' });
+      try { rmrf(path.join(engineDir(appRoot), 'dist.bad')); } catch {}
       fx.log(`engine ${t.to} confirmed rendering`);
       return 'ok';
     }
@@ -265,10 +274,18 @@ async function run(appRoot, platform, { pid = 0, noRelaunch = false, fx = defaul
 // Appelé par le lanceur AVANT Electron. Synchrone et rapide : ne retarde jamais l'écran.
 // Renvoie l'action prise : 'none' | 'repaired' | 'rolled_back' | 'rearmed' | 'cleared'.
 async function bootCheck(appRoot, platform, { fx = defaultFx, spawnGuard } = {}) {
-  const t = readTrial(appRoot);
-  if (!t || t.status !== 'pending') return 'none';
   const dir = engineDir(appRoot);
   const has = (n) => fs.existsSync(path.join(dir, n));
+  try { if (fs.existsSync(dir)) writeDurable(launcherMarkerPath(appRoot), new Date().toISOString()); } catch {}
+  // Sans `dist`, Electron ne démarre pas : quelle que soit la phase (bascule OU retour arrière
+  // coupé entre ses deux renommages), on remet l'ancien moteur tout de suite (revue du 14/11).
+  if (!has('dist') && has('dist.prev')) {
+    await rollBack(appRoot, 'interrupted during an engine switch');
+    fx.log('no engine in dist at start-up: previous engine restored');
+    return 'repaired';
+  }
+  const t = readTrial(appRoot);
+  if (!t || t.status !== 'pending') return 'none';
   if (t.phase === 'staged') {
     // Coupure entre l'extraction et la bascule : rien n'a changé, on abandonne proprement.
     // Le player reprendra l'installation à la prochaine directive (compteur de tentatives).
@@ -279,12 +296,7 @@ async function bootCheck(appRoot, platform, { fx = defaultFx, spawnGuard } = {})
     return 'cleared';
   }
   if (t.phase === 'swapping') {
-    // Coupure ENTRE les deux renommages : sans `dist`, Electron ne démarrerait pas.
-    if (!has('dist') && has('dist.prev')) {
-      await rollBack(appRoot, 'interrupted during the switch');
-      fx.log('interrupted during switch: previous engine restored');
-      return 'repaired';
-    }
+    // `dist` présent (sinon réparé plus haut) : la bascule a eu lieu, l'essai reprend.
     writeTrial(appRoot, { ...t, phase: 'trial', boots: 0 });
   }
   const cur = readTrial(appRoot);
@@ -315,7 +327,7 @@ function spawnDetachedGuard(appRoot, platform, pid = 0, noRelaunch = true) {
 module.exports = {
   _fs: fs,   // pour les tests : l'implémentation réellement utilisée
   TRIAL_MS, MAX_BOOTS, TRIAL_FILE, OK_FILE,
-  engineDir, trialPath, okPath, fsyncPath, fsyncTree, writeDurable, readTrial, writeTrial,
+  engineDir, trialPath, okPath, launcherMarkerPath, fsyncPath, fsyncTree, writeDurable, readTrial, writeTrial,
   swapIn, rollBack, run, bootCheck, watch, spawnDetachedGuard,
   _relaunch: relaunch,   // pour les tests : la vraie relance
   _spawnSafe: spawnSafe, _setLogFile: setLogFile, _shieldSignals: shieldSignals,

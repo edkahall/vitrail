@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import CmsSite
@@ -263,13 +263,21 @@ async def create_deployment(
     # ── Doublon : la même version déjà en cours vers un de ces players (retour Ed 14/11 : le
     # bouton ne montrait rien, 4 clics = 4 déploiements identiques). Refusé EN NOMMANT les players.
     if player_ids:
+        same_or_engine = (CmsUpdateDeployment.id_version == id_version)
+        if version is not None and version.track == ENGINE_TRACK:
+            same_or_engine = or_(same_or_engine, CmsPlayerUpdateVersion.track == ENGINE_TRACK)
         dup = (await db.execute(
             select(CmsPlayer.player_name, CmsPlayer.id_player)
             .join(CmsUpdateDeploymentTarget, CmsUpdateDeploymentTarget.id_player == CmsPlayer.id_player)
             .join(CmsUpdateDeployment,
                   CmsUpdateDeployment.id_deployment == CmsUpdateDeploymentTarget.id_deployment)
+            .join(CmsPlayerUpdateVersion,
+                  CmsPlayerUpdateVersion.id_version == CmsUpdateDeployment.id_version)
             .where(
-                CmsUpdateDeployment.id_version == id_version,
+                # Même version… ou, pour un MOTEUR, n'importe quelle autre version moteur encore en
+                # cours vers ce player (revue du 14/11 : la plus ancienne restait « en cours » à
+                # vie, la directive ne servant que la plus récente).
+                same_or_engine,
                 CmsUpdateDeployment.status.in_(("pending", "in_progress", "paused")),
                 CmsUpdateDeploymentTarget.status.in_(_IN_FLIGHT),
                 CmsUpdateDeploymentTarget.id_player.in_(player_ids),
@@ -483,39 +491,6 @@ async def mark_success_if_updated(
     return list(changed)
 
 
-async def mark_engine_success(
-    db: AsyncSession, id_player: int, electron_version: str | None
-) -> list[int]:
-    """Succès d'un déploiement MOTEUR, constaté au heartbeat : l'Electron remonté par le player
-    est EXACTEMENT la version cible. Égalité et non « >= » : une descente de version doit
-    réussir aussi (retour à une version sûre). Renvoie les id_deployment modifiés."""
-    if not electron_version:
-        return []
-    rows = (await db.execute(
-        select(CmsUpdateDeploymentTarget, CmsPlayerUpdateVersion.version)
-        .join(CmsUpdateDeployment,
-              CmsUpdateDeployment.id_deployment == CmsUpdateDeploymentTarget.id_deployment)
-        .join(CmsPlayerUpdateVersion,
-              CmsPlayerUpdateVersion.id_version == CmsUpdateDeployment.id_version)
-        .where(
-            CmsUpdateDeploymentTarget.id_player == id_player,
-            CmsUpdateDeploymentTarget.status.in_(_IN_FLIGHT),
-            CmsUpdateDeployment.status.in_(("pending", "in_progress", "paused")),
-            _track_filter(ENGINE_TRACK),
-        )
-    )).all()
-    now = datetime.now(UTC).replace(tzinfo=None)
-    changed: set[int] = set()
-    for target, target_version in rows:
-        if str(electron_version).strip() == str(target_version).strip():
-            target.status = "success"
-            target.completed_at = now
-            changed.add(target.id_deployment)
-    if changed:
-        await db.flush()
-    return list(changed)
-
-
 # Statuts qu'un player a le droit de remonter (`update:status`). `rolled_back` : le moteur
 # essayé n'a pas rendu dans le délai, le player est revenu SEUL sur l'ancien (vitrail#5).
 REPORTABLE_STATUSES = ("downloading", "staged", "installing", "success", "failed", "rolled_back")
@@ -538,6 +513,22 @@ async def report_target(
     )).scalar_one_or_none()
     if tgt is None or tgt.status in _TERMINAL_TARGET:
         return False
+    if new_status == "success":
+        # Moteur (vitrail#5) : le player ne signale `success` qu'une fois l'essai conclu (rendu
+        # confirmé) ; on ne le croit pas sur parole, la version d'Electron qu'il remonte doit
+        # être EXACTEMENT la cible. Sinon (encore sur l'ancien moteur) : ignoré.
+        row = (await db.execute(
+            select(CmsPlayerUpdateVersion.track, CmsPlayerUpdateVersion.version)
+            .join(CmsUpdateDeployment,
+                  CmsUpdateDeployment.id_version == CmsPlayerUpdateVersion.id_version)
+            .where(CmsUpdateDeployment.id_deployment == id_deployment)
+        )).first()
+        if row is not None and row.track == ENGINE_TRACK:
+            caps = (await db.execute(
+                select(CmsPlayer.capabilities).where(CmsPlayer.id_player == id_player)
+            )).scalar_one_or_none()
+            if engine_version_of(caps) != row.version:
+                return False
     now = datetime.now(UTC).replace(tzinfo=None)
     tgt.status = new_status
     # `started_at` = base du timeout : posé (réinitialisé) à l'ENTRÉE en `installing` uniquement →

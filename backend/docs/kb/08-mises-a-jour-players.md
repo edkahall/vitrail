@@ -113,7 +113,12 @@ Une mise à jour du player ne change que son code, jamais son **moteur Electron*
   s'arrête au premier échec. Une coupure de courant pendant l'essai est reprise au démarrage.
 - Relancer la même version vers un player où elle est déjà en cours est refusé. Après le clic, le
   tiroir affiche « Déploiement n°… lancé sur N player(s) ».
-- La colonne **Electron** de l'inventaire montre le moteur de chaque écran.
+- La colonne **Electron** de l'inventaire montre le moteur de chaque écran (et la fiche du player
+  l'affiche à côté de sa version).
+- Un player installé avant cette fonction **refuse** la mise à jour du moteur (« launcher not
+  updated ») tant que son lanceur n'a pas été rafraîchi (relancer `install.sh` / `install.ps1`).
+- Le déploiement n'est réussi que si le player signale la fin de son essai **et** remonte la version
+  cible : une version vue pendant l'essai ne compte pas.
 
 ## Mettre à jour par l'assistant
 

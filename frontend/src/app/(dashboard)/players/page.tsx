@@ -1191,18 +1191,25 @@ export default function PlayersPage() {
         {selected && (
           <div className="flex flex-col gap-6" data-write-perm="players:edit">
             {/* En-tête : statut + version + OS + bouton Renommer (le nom est déjà le titre du drawer) */}
-            <div className="flex items-center flex-wrap gap-x-3 gap-y-1">
+            {/* Une seule ligne (demande Ed 14/11) : « v1.6.22 linux-arm64 (Electron 42.11.18) » puis
+                Renommer à droite ; si la place manque, c'est la ligne d'infos qui se tronque. */}
+            <div className="flex items-center gap-x-3">
               <StatusBadge
                 status={selected.status}
                 label={playerStatusLabel(selected.status, t)}
               />
-              {selected.player_version && (
-                <span className="text-xs text-gray-400">v{selected.player_version}</span>
-              )}
-              <span className="text-xs text-gray-400">{selected.player_os}</span>
+              <span className="min-w-0 truncate whitespace-nowrap text-[11px] text-gray-400" data-testid="player-version-line">
+                {selected.player_version && <>v{selected.player_version} </>}
+                {selected.player_os}
+                {/* Moteur Electron (players Electron seulement) : depuis vitrail#5 il se met à jour à
+                    part du code, la version du player ne dit plus rien du moteur. */}
+                {selected.capabilities?.electron_version && (
+                  <span data-testid="player-electron-version"> (Electron {selected.capabilities.electron_version})</span>
+                )}
+              </span>
               <button
                 onClick={() => { setEditPlayerName(selected.player_name); setRenameOpen((v) => !v) }}
-                className="ml-auto inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs text-accent hover:underline"
               >
                 <Pencil className="w-3.5 h-3.5" />
                 {t('common.rename')}

@@ -3255,9 +3255,11 @@ async def ws_player(
                     try:
                         changed = await ota.mark_success_if_updated(
                             db, id_player, msg.get("player_version"))
-                        # Moteur (vitrail#5) : succès = l'Electron remonté est la cible.
-                        changed = list(set(changed) | set(await ota.mark_engine_success(
-                            db, id_player, ota.engine_version_of(caps))))
+                        # Moteur (vitrail#5) : PAS de succès au battement de cœur. Le nouveau moteur
+                        # remonte sa version dès sa 1re connexion, AVANT d'avoir prouvé qu'il
+                        # affiche ; un succès compté ici rendait un retour arrière invisible
+                        # (revue du 14/11). Le succès vient du player, essai conclu, et le serveur
+                        # vérifie la version (ota.report_target).
                         if changed:
                             await db.commit()
                             from app.workers.ota_worker import ota_rollup

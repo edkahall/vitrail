@@ -113,7 +113,12 @@ separately: **Settings → Updates → "Electron engine" button** (drawer).
   and the deployment stops at the first failure. A power cut during the trial is handled at start-up.
 - Deploying the same version to a player where it is already in progress is refused. After the
   click, the drawer shows "Deployment #… started on N player(s)".
-- The **Electron** column of the inventory shows each screen's engine.
+- The **Electron** column of the inventory shows each screen's engine (the player drawer also shows
+  it next to the player version).
+- A player installed before this feature **refuses** an engine update ("launcher not updated") until
+  its launcher is refreshed (re-run `install.sh` / `install.ps1`).
+- A deployment succeeds only when the player reports the end of its trial **and** reports the target
+  version: a version seen during the trial does not count.
 
 ## Update through the assistant
 

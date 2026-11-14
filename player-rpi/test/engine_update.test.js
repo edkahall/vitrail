@@ -202,6 +202,26 @@ function fx(over = {}) {
 
   T = tree({ status: 'ok' });
   check('essai deja conclu -> rien', await guard.bootCheck(T.appRoot, 'rpi', { fx: fx() }) === 'none', null);
+  check('boot-check laisse la trace du lanceur', fs.existsSync(guard.launcherMarkerPath(T.appRoot)), null);
+
+  // Revue du 14/11, n°7 : coupure PENDANT un retour arrière (entre ses 2 renommages, phase trial).
+  T = tree({ phase: 'trial' });
+  fs.renameSync(path.join(T.eng, 'dist'), path.join(T.eng, 'dist.prev'));
+  fs.rmSync(path.join(T.eng, 'dist.next'), { recursive: true });
+  r = await guard.bootCheck(T.appRoot, 'rpi', { fx: fx(), spawnGuard: () => {} });
+  check('dist absent en phase trial -> ancien moteur remis au demarrage', r === 'repaired' && T.v('dist') === '1.0.0', { r, d: T.v('dist') });
+
+  // n°6 : le moteur rejeté (dist.bad) est supprimé une fois un essai réussi.
+  T = tree();
+  fs.mkdirSync(path.join(T.eng, 'dist.bad'));
+  F = fx();
+  F.onRelaunch = () => guard.writeDurable(guard.okPath(T.appRoot), 'x');
+  await guard.run(T.appRoot, 'linux', { fx: F, trialMs: 60000, pollMs: 50 });
+  check('essai reussi -> dist.bad supprime', !fs.existsSync(path.join(T.eng, 'dist.bad')), null);
+
+  // n°4 : un moteur figé est vraiment arrêté (SIGKILL après SIGTERM), Linux/RPi.
+  check('arret force du moteur fige (pkill -9 apres SIGTERM)', /spawnSync\('pkill', \['-9', '-f', pat\]\)/.test(
+    fs.readFileSync(path.join(ROOT, 'player-rpi', 'src', 'engine_guard.js'), 'utf8')), null);
 
   // Le VRAI programme, tel que l'appellent les lanceurs (node système, arguments, code de sortie).
   const guardCli = path.join(ROOT, 'player-rpi', 'src', 'engine_guard.js');
@@ -334,10 +354,12 @@ function fx(over = {}) {
     if (res.status !== 0) throw new Error(`tar: ${res.stderr}`);
     return out;
   }
-  async function installWith(tarPath, cfgOver = {}) {
+  async function installWith(tarPath, cfgOver = {}, { launcher = true, bad = false } = {}) {
     const t = tree();
     fs.rmSync(path.join(t.eng, 'dist.next'), { recursive: true });
     fs.unlinkSync(guard.trialPath(t.appRoot));
+    if (launcher) fs.writeFileSync(guard.launcherMarkerPath(t.appRoot), 'x');
+    if (bad) { fs.mkdirSync(path.join(t.eng, 'dist.bad')); fs.writeFileSync(path.join(t.eng, 'dist.bad', 'version'), '0.9.0'); }
     const u = updater(t.appRoot);
     Object.assign(u.cfg, { engine_ota: { id_deployment: 9, version: '2.0.0', staged: true, force: true } }, cfgOver);
     fs.copyFileSync(tarPath, path.join(u.userData, 'engine_staged.tar.gz'));
@@ -366,6 +388,45 @@ function fx(over = {}) {
   I = await installWith(mkTar('2.0.0'), { engine_attempt: { version: '2.0.0', count: 2 } });
   check('2 tentatives deja faites -> echec sans extraire', !I.u.quitted
     && !fs.existsSync(path.join(I.t.eng, 'dist.next')) && I.u.sent.some(([, st]) => st === 'failed'), I.u.sent);
+
+  // Revue du 14/11, n°5 : lanceur sans boot-check ⇒ refus nommé, rien de préparé.
+  I = await installWith(mkTar('2.0.0'), {}, { launcher: false })
+  check('lanceur pas a jour -> refus nomme, rien de prepare', !I.u.quitted
+    && !fs.existsSync(path.join(I.t.eng, 'dist.next')) && !guard.readTrial(I.t.appRoot)
+    && I.u.sent.some(([, st, e]) => st === 'failed' && /launcher not updated/.test(e)), I.u.sent);
+  // n°6 : le moteur rejeté d'un essai précédent est supprimé avant l'extraction.
+  I = await installWith(mkTar('2.0.0'), {}, { bad: true })
+  check('dist.bad supprime avant l extraction', I.u.quitted && !fs.existsSync(path.join(I.t.eng, 'dist.bad')), null);
+  // n°3 : après un échec, plus aucun téléchargement pour ce déploiement.
+  {
+    const t = tree();
+    fs.unlinkSync(guard.trialPath(t.appRoot));   // aucun essai en cours
+    const u = updater(t.appRoot);
+    let gets = 0;
+    u.httpGet = () => { gets++; return { on() {}, destroy() {}, setTimeout() {} }; };
+    u.cfg.engine_ota = { id_deployment: 9, version: '2.0.0', url: dir.download_url, sha256: '', force: true, staged: false };
+    u._fail('download HTTP 500');
+    u.tick();
+    u.handle(dir);                       // la même directive revient au sync suivant
+    u.tick();
+    check('apres un echec, plus de nouveau telechargement pour ce deploiement', gets === 0
+      && u.cfg.engine_ota.failed === true, { gets, s: u.cfg.engine_ota });
+    u.handle({ ...dir, id_deployment: 10 });   // un NOUVEAU déploiement repart
+    check('un nouveau deploiement repart de zero', u.cfg.engine_ota.failed === false && gets === 1, { gets });
+  }
+  // n°1 : l'essai conclu est SIGNALÉ au serveur (il ne compte plus le heartbeat).
+  {
+    const t = tree({ id_deployment: 9, status: 'ok', phase: 'trial' });
+    const u = updater(t.appRoot, { electronVersion: '2.0.0' });
+    let online = false;
+    u.sendStatus = (id, st) => { u.sent.push([id, st]); return online; };
+    u.reportOutcome();
+    check('essai ok hors ligne -> fichier garde pour reessayer', !!guard.readTrial(t.appRoot), null);
+    online = true;
+    u.reportOutcome();
+    check('essai ok -> success signale au serveur, puis nettoye',
+      u.sent.filter(([, st]) => st === 'success').length === 2 && !guard.readTrial(t.appRoot), u.sent);
+  }
 
   // Confirmation du rendu par le nouveau moteur.
   T = tree({ phase: 'trial' });
