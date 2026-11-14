@@ -83,6 +83,22 @@ jobs:
           CMS_VAULT_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
         run: pytest -q
 
+  players:
+    name: Players (tests node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Tests du code des players (renderer, sync LAN, panneau local, frein de stockage...),
+      # qui extraient et EXECUTENT les vraies fonctions des 7 surfaces. Aucune dependance npm.
+      # Ils ne tournaient nulle part : 5 sur 23 etaient rouges sans que personne ne le voie
+      # (issue vitrail#7). Motif entre guillemets : c'est Node qui l'etend.
+      - name: node --test
+        run: node --test "player-rpi/test/*.test.js"
+
   frontend:
     name: Frontend (tsc + eslint + Playwright)
     runs-on: ubuntu-latest

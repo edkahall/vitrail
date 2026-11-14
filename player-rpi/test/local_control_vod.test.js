@@ -6,9 +6,26 @@
 //
 // Usage :  node player-rpi/test/local_control_vod.test.js <chemin/local_control_server.js>
 // Sortie : une ligne OK/ECHEC par assertion ; code de sortie 1 si un echec.
+//         node player-rpi/test/local_control_vod.test.js     (sans argument : les 3 players
+//         Electron, chacun dans son propre processus -- c'est ce que lance `node --test`)
 const http = require('http');
-// Chemin resolu en ABSOLU : require() resout sinon relativement a CE fichier, pas au cwd.
 const path = require('path');
+
+if (!process.argv[2]) {
+  const { spawnSync } = require('child_process');
+  const ROOT = path.resolve(__dirname, '..', '..');
+  let failed = 0;
+  for (const p of ['player-rpi', 'player-linux', 'player-windows']) {
+    const target = path.join(ROOT, p, 'src', 'local_control_server.js');
+    console.log(`\n=== ${p} ===`);
+    const r = spawnSync(process.execPath, [__filename, target], { stdio: 'inherit' });
+    if (r.status !== 0) failed++;
+  }
+  console.log(failed ? `\n${failed} player(s) en ECHEC` : '\nTOUT VERT (3 players)');
+  process.exit(failed ? 1 : 0);
+}
+
+// Chemin resolu en ABSOLU : require() resout sinon relativement a CE fichier, pas au cwd.
 const { LocalControlServer } = require(path.resolve(process.cwd(), process.argv[2]));
 
 const CONFIGS = [

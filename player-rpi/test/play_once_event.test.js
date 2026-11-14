@@ -44,7 +44,12 @@ function check(label, cond, detail) {
 function extract(file) {
   const src = fs.readFileSync(file, 'utf8');
   const m = src.match(/function advanceFromItem\(item\) \{[\s\S]*?\n\}/);
-  return m ? m[0] : null;
+  if (!m) return null;
+  // advanceFromItem appelle touchDocRun (feuilletage tactile, 14/08) : on extrait la VRAIE
+  // fonction avec elle, sinon ReferenceError. touchInteracting, elle, depend de l'horloge et
+  // des gestes : elle est bouchonnee dans le bac a sable (aucun geste = false).
+  const dep = src.match(/function touchDocRun\(index\) \{[\s\S]*?\n\}/);
+  return dep ? `${dep[0]}\n${m[0]}` : m[0];
 }
 
 /**
@@ -70,6 +75,7 @@ function run(code, state) {
     function saveSync() {}
     function clearPreload() {}
     function _getContentFP() { return 'fp'; }
+    function touchInteracting() { return false; }
     ${code}
     advanceFromItem(${JSON.stringify(state.item)});
     return { currentIndex, playOnce: _playOnce };

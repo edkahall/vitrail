@@ -39,7 +39,7 @@ const SURFACES = [
   'player-linux/src/sync_lan.js',
   'player-windows/src/sync_lan.js',
 ];
-const KOTLIN = 'player-android/app/src/main/java/app/signflow/player/LanSyncController.kt';
+const KOTLIN = require('./_android_src').findAndroidSource('LanSyncController.kt');
 
 let fail = 0;
 function check(label, cond, detail) {
@@ -146,7 +146,8 @@ function newCase({ Ctl, idPlayer, isMaster = false, windowElapsed, ready, peer }
 
   // --- Android/Kotlin : non executable ici, verifie structurellement. Un oubli laisserait le
   // Minix — le player qui a REVELE le defaut — avec le comportement fautif, sans un mot.
-  const kt = fs.readFileSync(path.join(ROOT, KOTLIN), 'utf8');
+  check('kotlin: LanSyncController.kt trouve (un seul) sous player-android', !!KOTLIN, null);
+  const kt = KOTLIN ? fs.readFileSync(KOTLIN, 'utf8') : '';
   check('kotlin: fenetre de decouverte definie',
     /DISCOVERY_WINDOW_MS\s*=\s*2\s*\*\s*ANNOUNCE_INTERVAL_MS/.test(kt), null);
   check('kotlin: garde de decouverte dans shouldBeLeader',

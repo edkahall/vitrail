@@ -191,8 +191,9 @@ check('l eviction ne porte que sur le NON-epingle',
 // seul a ne pas etre protege. On lit le vrai ContentStore.kt (portage, pas copie : on
 // verifie les GARANTIES, pas le texte).
 console.log('Android porte les memes garanties (4e surface du groupe A)');
-const KT = path.join(ROOT, 'player-android/app/src/main/java/app/signflow/player/ContentStore.kt');
-const kt = fs.readFileSync(KT, 'utf8');
+const KT = require('./_android_src').findAndroidSource('ContentStore.kt');
+check('ContentStore.kt trouve (un seul) sous player-android', !!KT);
+const kt = KT ? fs.readFileSync(KT, 'utf8') : '';
 check('plancher absolu defini', /const\s+val\s+MIN_FREE_BYTES\s*=\s*512L/.test(kt));
 check('frein AVANT demarrage (refus de pump)', /freeBytes\(\)\s*<\s*MIN_FREE_BYTES/.test(kt));
 check('frein PENDANT l ecriture', /FREE_CHECK_EVERY_BYTES/.test(kt) && /insufficient-space/.test(kt));

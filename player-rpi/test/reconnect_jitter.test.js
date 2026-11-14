@@ -105,14 +105,33 @@ for (const rel of SURFACES) {
 
 // 6. Anti-divergence : toutes les surfaces doivent produire la MEME distribution. Une
 //    surface laissee derriere ne se verrait pas autrement -- elle diffuserait normalement.
+//    On fige Math.random sur des valeurs connues et on compare les sorties EXACTEMENT. La
+//    version precedente comparait les min/max EMPIRIQUES de 400 tirages a +/-60 ms pres :
+//    sur une fenetre de 8 s, l'ecart attendu entre extremes de deux surfaces depassait
+//    regulierement 60 ms, d'ou un echec ~1 passage sur 3 sur du code juste.
 if (found.length > 1) {
-  const bounds = found.map(({ rel, fn }) => {
-    const s = Array.from({ length: 400 }, () => fn(3));
-    return { rel, lo: Math.min(...s), hi: Math.max(...s) };
-  });
-  const same = bounds.every((b) => Math.abs(b.hi - bounds[0].hi) <= 60
-                                && Math.abs(b.lo - bounds[0].lo) <= 60);
-  check(`les ${found.length} surfaces partagent la meme distribution`, same, bounds);
+  const RANDOMS = [0, 0.001, 0.25, 0.5, 0.75, 0.999999];
+  const realRandom = Math.random;
+  let table;
+  try {
+    table = found.map(({ rel, fn }) => ({
+      rel,
+      out: RANDOMS.flatMap((r) => {
+        Math.random = () => r;
+        return Array.from({ length: 11 }, (_, n) => fn(n));
+      }),
+    }));
+  } finally {
+    Math.random = realRandom;
+  }
+  const ref = JSON.stringify(table[0].out);
+  const diverging = table.filter((t) => JSON.stringify(t.out) !== ref).map((t) => t.rel);
+  check(`les ${found.length} surfaces partagent la meme distribution`, diverging.length === 0,
+        { reference: table[0].rel, diverging });
+  // Temoin : la sortie depend bien du tirage (sinon la comparaison ci-dessus serait vacante).
+  const first = table[0].out;
+  check('temoin : Math.random fige change bien la sortie', first[3] !== first[3 + 11 * 5],
+        { r0: first[3], rMax: first[3 + 11 * 5] });
 }
 
 console.log(fail === 0 ? `\nTOUT VERT (${found.length} surfaces)` : `\n${fail} ECHEC(S)`);

@@ -1,4 +1,4 @@
-// Amorce ChromeOS + autorun BS v53 — decision 3 « canal unique » (2026-07-28).
+// Amorce ChromeOS + autorun BS — decision 3 « canal unique » (2026-07-28).
 //
 // L'amorce (index.html) doit charger la version EPINGLEE du renderer depuis, dans l'ordre :
 //   1. le chemin statique v/<ver>/ (sous le scope du service worker -> survit offline) ;
@@ -152,25 +152,38 @@ const API_BASE = 'http://bk/api/v1/updates/renderers/chromeos/9.9.9/';
     r.scripts.length === 4 && r.scripts[0] === 'ed25519.js' && r.fetched.length === 0,
     { scripts: r.scripts, fetched: r.fetched });
 
-  // ── 3. Autorun BS v53 : les 3 copies identiques + marqueurs presents ──────
-  const AUTORUNS = [
+  // ── 3. Autorun BS : les copies SUIVIES identiques + marqueurs presents ─────
+  // La version attendue est LUE dans la source (player-brightsign/autorun.brs) : un numero
+  // code en dur ici cassait le test a chaque montee d'autorun (v53 -> v54), sans rien
+  // apprendre. Ce qui compte : les copies servies ne divergent pas de la source.
+  const TRACKED = [
     'player-brightsign/autorun.brs',
     'frontend/public/player-chromeos/brightsign/autorun.brs',
-    'SD_card_BS/sd_image_clean/autorun.brs',   // copie de travail : verifiee si presente
   ];
-  const bodies = AUTORUNS
+  // Copie de travail NON suivie par git (ce qui part sur la carte SD) : absente en CI,
+  // signalee ici si elle a pris du retard, mais non assertee (cf. multizone_recovery).
+  const SD_COPY = 'SD_card_BS/sd_image_clean/autorun.brs';
+  const bodies = TRACKED
     .map((f) => path.join(ROOT, f))
     .filter((f) => fs.existsSync(f))
     .map((f) => [f, fs.readFileSync(f, 'utf8')]);
-  check('autorun : au moins les 2 copies suivies', bodies.length >= 2, bodies.map(([f]) => f));
+  check('autorun : les 2 copies suivies sont presentes', bodies.length === 2, bodies.map(([f]) => f));
+  const verMatch = bodies.length ? bodies[0][1].match(/autorun_ver = "(\d+)"/) : null;
+  check('autorun : version lisible dans la source', !!verMatch, null);
+  const ver = verMatch ? verMatch[1] : '?';
   for (const [f, body] of bodies) {
-    check(`autorun v53 (${path.basename(path.dirname(f))})`,
-      body.includes('autorun_ver = "53"')
+    check(`autorun v${ver} (${path.basename(path.dirname(f))})`,
+      body.includes(`autorun_ver = "${ver}"`)
       && body.includes('/api/v1/updates/renderers/brightsign/')
       && body.includes('Function ProbeUrl('), null);
   }
   const uniqueBodies = new Set(bodies.map(([, b]) => b));
-  check('autorun : copies strictement identiques', uniqueBodies.size === 1, bodies.map(([f]) => f));
+  check('autorun : copies suivies strictement identiques', uniqueBodies.size === 1, bodies.map(([f]) => f));
+  const sdFile = path.join(ROOT, SD_COPY);
+  if (fs.existsSync(sdFile)) {
+    const same = bodies.length && fs.readFileSync(sdFile, 'utf8') === bodies[0][1];
+    console.log(`--   copie SD locale (${SD_COPY}) : ${same ? 'a jour' : 'EN RETARD sur la source, a recopier avant de graver une carte'} (informatif)`);
+  }
 
   console.log(fail === 0 ? 'TOUS VERTS' : `${fail} ECHEC(S)`);
   process.exit(fail === 0 ? 0 : 1);
