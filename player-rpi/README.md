@@ -19,10 +19,17 @@ Electron player for **Raspberry Pi 4/5 on Raspberry Pi OS Trixie (Debian 13, arm
   The code **never** calls `setFullScreen(true)` / `ready-to-show` / `show:false`: cage handles
   fullscreen natively, these calls create a fatal XDG conflict. Fullscreen comes from the
   `--start-fullscreen` CLI flag.
-- **GPU ENABLED**: `--enable-gpu --use-gl=egl --use-v4l2-codec` (Broadcom V4L2 decoding, no
-  VA-API). ⚠️ `--disable-gpu` **breaks fullscreen under cage** — do not put it back. The
-  GPU subprocess logs `exit_code=5` (EGL passthrough not supported on RPi5/Mesa): **not fatal**,
-  Chromium falls back to software rendering by itself.
+- **GPU ENABLED, flags in `launcher-flags.conf`**: the GPU/GL/codec flags depend on the Electron
+  version, so `start-player.sh` reads them from `launcher-flags.conf` at the root of the player
+  (one `--flag` per line, `#` = comment), **again before every Electron start**: editing the
+  file applies at the next player restart, no reinstall. Missing file or no valid flag = the
+  built-in defaults, which are the same as the shipped file. The launch log says which source
+  was used (`Launcher flags (...)`). The kiosk flags (`--ozone-platform=wayland`, `--no-sandbox`,
+  `--start-fullscreen`, `--disable-dev-shm-usage`) stay in `start-player.sh`.
+  With Electron 42: `--enable-gpu --use-gl=angle --use-angle=gles --use-v4l2-codec` = GPU
+  compositing, rasterization and WebGL (measured on a RPi 5). `--use-gl=egl` no longer exists in
+  Electron 42 and never gave the GPU on this board anyway (everything in software).
+  ⚠️ `--disable-gpu` **breaks fullscreen under cage** — do not put it back.
 - **FHD forced, 4K eliminated** (stutters even with GPU enabled): `wlr-randr --mode $WLR_MODE` in the
   `~/start-player.sh` loop (5 attempts — cage may not be ready).
 - **HDMI drift guard**: turning the screen off/on = hotplug → wlroots switches back to the preferred

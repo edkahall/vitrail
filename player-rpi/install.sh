@@ -185,23 +185,51 @@ while true; do
     echo "[\$(date -Iseconds)] wlr-randr: no output detected, skipping resolution force" >> "\$LOG"
   fi
   sleep 1  # Let cage Wayland compositor fully initialize before Electron connects
+
+  # ── Engine-dependent flags: read from launcher-flags.conf (issue #4) ─────────
+  # GPU/GL/codec flags depend on the Electron version (Electron 42 dropped --use-gl=egl),
+  # so they live in a file that can change WITH the engine instead of being frozen here at
+  # install time. Read again before EVERY Electron start: a change applies at the next
+  # player restart, no reinstall, no reboot.
+  # Format: one flag per line, starting with "--"; lines starting with "#" and blank lines
+  # are ignored; anything else is logged and skipped. No file, or no valid flag in it
+  # -> the built-in defaults below.
+  # Defaults = what works with Electron 42 on a RPi 5 (measured: gpu_compositing=enabled):
+  #   --enable-gpu --use-gl=angle --use-angle=gles : GPU compositing/raster through ANGLE
+  #     on the V3D OpenGL ES driver. The former --use-gl=egl no longer exists in Electron
+  #     42, and even under Electron 30 it never worked here (GPU process exit_code=5).
+  #     --disable-gpu breaks fullscreen under cage/Wayland: keep --enable-gpu.
+  #   --use-v4l2-codec : video stays CPU-decoded in practice (no H.264 decoder on the
+  #     RPi 5, and Chromium on Linux only uses VA-API), kept for the RPi 4.
+  _flags_file="$PLAYER_DIR/launcher-flags.conf"
+  _engine_flags=()
+  if [[ -r "\$_flags_file" ]]; then
+    while read -r _line || [[ -n "\$_line" ]]; do
+      _line="\${_line%\$'\r'}"            # file edited on Windows (CRLF)
+      [[ -z "\$_line" || "\$_line" == \#* ]] && continue
+      if [[ "\$_line" == --?* ]]; then
+        _engine_flags+=("\$_line")
+      else
+        echo "[\$(date -Iseconds)] Launcher flags: ignored line (not a --flag): \$_line" >> "\$LOG"
+      fi
+    done < "\$_flags_file"
+  fi
+  if (( \${#_engine_flags[@]} )); then
+    _flags_src="\$_flags_file"
+  else
+    _engine_flags=(--enable-gpu --use-gl=angle --use-angle=gles --use-v4l2-codec)
+    _flags_src="built-in defaults"
+  fi
+  echo "[\$(date -Iseconds)] Launcher flags (\$_flags_src): \${_engine_flags[*]}" >> "\$LOG"
+
+  # Fixed flags, whatever the engine (the kiosk does not work without them):
   # --ozone-platform=wayland : use Wayland backend (RPi OS Trixie default)
   # --no-sandbox             : required on RPi OS (no setuid sandbox helper)
-  # --enable-gpu --use-gl=angle --use-angle=gles : GPU compositing/raster through ANGLE on
-  #   the V3D OpenGL ES driver (Electron 42, measured on RPi 5: gpu_compositing=enabled).
-  #   The former --use-gl=egl no longer exists in Electron 42, and even under Electron 30
-  #   it never worked here (GPU process exit_code=5 -> everything in software).
-  #   Video stays CPU-decoded: the RPi 5 has no H.264 decoder, and Chromium on Linux
-  #   only uses VA-API, not the V4L2 HEVC decoder.
-  #   --disable-gpu breaks fullscreen under cage/Wayland so we keep --enable-gpu.
   # --disable-dev-shm-usage  : /dev/shm too small on some RPi configs
   "$PLAYER_DIR/node_modules/.bin/electron" "$PLAYER_DIR" \\
     --ozone-platform=wayland \\
     --no-sandbox \\
-    --enable-gpu \\
-    --use-gl=angle \\
-    --use-angle=gles \\
-    --use-v4l2-codec \\
+    "\${_engine_flags[@]}" \\
     --disable-dev-shm-usage \\
     --start-fullscreen \\
     >> "\$LOG" 2>&1
