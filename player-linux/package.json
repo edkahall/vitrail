@@ -1,6 +1,6 @@
 {
   "name": "signflow-player",
-  "version": "1.5.27",
+  "version": "1.5.28",
   "license": "AGPL-3.0-or-later",
   "description": "Vitrail Digital Signage Player — Electron Linux",
   "main": "src/main.js",

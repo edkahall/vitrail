@@ -28,7 +28,8 @@ and nothing phones home.
 - **Content:** media library, playlists, multi-zone templates (any canvas resolution, portrait,
   LED), documents (PDF/PPTX), web pages, RSS and data feeds, VOD
 - **Scheduling:** programmes, events, priorities, targeting by player, group, site or tags
-- **Fleet:** provisioning by token, OTA updates (with canary), remote commands, screen power
+- **Fleet:** provisioning by token, OTA updates of the player code and of its Electron engine
+  (canary, automatic rollback), remote commands, screen power
   schedules, HDMI/RS-232 display control, LAN synchronisation between players, video walls
 - **In-store audio:** music baskets with automatic ducking for jingles and messages
 - **Retail media:** share-of-voice inventory, advertiser self-service portal, approval workflow,

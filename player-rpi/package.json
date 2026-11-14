@@ -1,6 +1,6 @@
 {
   "name": "signflow-player-rpi",
-  "version": "1.6.23",
+  "version": "1.6.24",
   "license": "AGPL-3.0-or-later",
   "description": "Vitrail Digital Signage Player — Electron Raspberry Pi (ARM64)",
   "main": "src/main.js",

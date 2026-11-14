@@ -1,6 +1,6 @@
 {
   "name": "signflow-player-windows",
-  "version": "1.6.26",
+  "version": "1.6.27",
   "license": "AGPL-3.0-or-later",
   "description": "Vitrail Digital Signage Player — Electron Windows",
   "main": "src/main.js",
