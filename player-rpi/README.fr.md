@@ -57,6 +57,21 @@ dans `node_modules/electron/dist.next`, puis passe la main à `src/engine_guard.
 5 minutes. Le lanceur exécute `engine_guard.js boot-check` avant Electron (coupure pendant une
 bascule). Journal : `node_modules/electron/engine-guard.log`. `install.sh` donne `node_modules` au compte du player (aucun root pour changer de moteur) ; la garde de résolution de `start-player.sh` ne tue qu'Electron, jamais le garde moteur.
 
+
+## Mises à jour du système (Debian / Raspberry Pi OS)
+
+Pilotées depuis le serveur (**Réglages → Mises à jour → Mises à jour OS**) : un player de banc
+installe ce qui est en attente et remonte la liste exacte des paquets changés (le manifeste) ; une
+fois approuvé, les autres players installent ce manifeste et rien d'autre. `src/os_update.js` ne
+lance jamais apt lui-même : il dépose une demande dans `/var/lib/signflow/os-update/` et démarre
+`signflow-os-update.service` (autorisé par une règle polkit), qui exécute le script root
+`scripts/signflow-os-update` (installé dans `/usr/local/bin`). Le script valide chaque ligne, simule
+apt avant d'installer, et écrit son état et ses résultats dans `/var/lib/signflow-os-update/` (à
+root). `install.sh` le met en place ; sur un player installé avant cette fonction, lancer une fois
+`sudo bash scripts/install-os-update.sh`, **depuis une copie neuve de la release, jamais depuis le
+dossier du player** (que son compte peut réécrire). Journaux : `journalctl -u signflow-os-update`,
+`/var/lib/signflow-os-update/last-run.log`.
+
 ## Config
 
 `~/.config/signflow-player-rpi/config.json` — le répertoire est **dérivé du `name` de

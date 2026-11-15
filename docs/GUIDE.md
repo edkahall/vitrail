@@ -353,8 +353,9 @@ its own, from **Settings → Updates → Electron engine**:
    checks it against the `SHASUMS256.txt` published by Electron, repackages it and stores it.
    It arrives in **beta**. Players never download anything from the Internet.
 2. **Each org admin** deploys it to their own screens, from the same drawer: choose the
-   target, optional time windows, then **Deploy**. A beta engine can only be tried on **one
-   player** at a time. Once the operator **promotes** it, it can go to groups, sites or the whole
+   target, optional time windows and **Players at a time** (default 1: the next player only gets
+   the engine once the previous one has finished), then **Deploy**. A beta engine can only be tried
+   on **one player** at a time. Once the operator **promotes** it, it can go to groups, sites or the whole
    organisation.
 3. The player downloads the engine, checks it, extracts it next to the current one, then hands
    over to a small guard and stops. The guard switches engines and restarts the player. The new
@@ -372,6 +373,40 @@ without the start-up check, a power cut at the wrong moment could leave the scre
 
 The deployment is marked successful only when the player reports that its trial ended well **and**
 the Electron version it reports is the target; a version reported during the trial does not count.
+
+### Operating system updates (Linux and Raspberry Pi players)
+
+Vitrail never tells players "update yourselves"; it tells them "install exactly this". From
+**Settings → Updates → OS updates**:
+
+1. Each Linux / Raspberry Pi player shows its **pending updates** (with security ones) and when it
+   last checked. Nothing is installed automatically.
+2. **The server operator** picks a **bench** player and clicks **Update this bench**. The bench
+   installs everything pending, reboots if a package needs it, and reports the exact list of
+   packages it changed: the **manifest**. It arrives as **to approve**.
+3. The operator tests the bench screen, then **approves** the manifest.
+4. **Each org admin** deploys it to their screens (target, optional install window, players at a
+   time). A manifest only goes to players of the **same OS family** as the bench
+   (`debian-12-amd64`, `raspios-13-arm64`…). An unapproved manifest can only go to one player.
+5. Each player installs **that manifest and nothing else**: apt is simulated first and anything
+   outside the manifest (another version, a removal) is refused. A version that has left the
+   Debian archive gives **manifest obsolete**: update a bench again. Players never downgrade, reboot
+   on their own when needed, and count as successful only once they are back. The deployment goes
+   one player at a time by default and stops at the first failure.
+
+Root is only used by a small helper, `signflow-os-update`, started through a systemd unit that
+polkit lets the player account start; it validates every line of the request and writes only into
+its own root-owned directory (`/var/lib/signflow-os-update/`). New installs get it from
+`install.sh`. **Players installed before this feature** need it once:
+
+```bash
+sudo bash scripts/install-os-update.sh            # from player-linux/ or player-rpi/
+```
+
+Run it from a **fresh copy of the release** (git clone or downloaded archive), never from the
+player's own folder: the player account can rewrite that folder, and this script runs as root.
+
+Windows players are not covered yet (see issue #6).
 
 ## 8. Telegram assistant (“Jeanine”)
 

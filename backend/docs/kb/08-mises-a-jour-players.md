@@ -105,7 +105,8 @@ Une mise à jour du player ne change que son code, jamais son **moteur Electron*
   (ex. `42.11.18`), cocher les plateformes, **Récupérer**. Le serveur télécharge la version
   officielle, vérifie sa somme, la stocke ; elle arrive en **bêta**.
 - **Déployer** (chaque admin d'organisation, sur ses écrans) : dans « Déployer sur », choisir la
-  cible et les fenêtres horaires, puis **Déployer** sur la ligne voulue. Avec un player choisi, seules
+  cible, les fenêtres horaires et **Players à la fois** (1 par défaut : le suivant ne reçoit le
+  moteur qu'une fois le précédent terminé), puis **Déployer** sur la ligne voulue. Avec un player choisi, seules
   les versions de sa plateforme sont proposées. Une version **bêta** ne s'essaie que sur **un seul
   player** ; une fois **promue** par l'exploitant, elle part sur des groupes, des sites ou toute l'org.
 - **Sécurité** : le player essaie le nouveau moteur ; s'il ne confirme pas son affichage en
@@ -119,6 +120,31 @@ Une mise à jour du player ne change que son code, jamais son **moteur Electron*
   updated ») tant que son lanceur n'a pas été rafraîchi (relancer `install.sh` / `install.ps1`).
 - Le déploiement n'est réussi que si le player signale la fin de son essai **et** remonte la version
   cible : une version vue pendant l'essai ne compte pas.
+
+## Mises à jour du système (Linux, Raspberry Pi)
+
+**Réglages → Mises à jour → bouton « Mises à jour OS »** (tiroir). Principe : jamais « mettez-vous à
+jour », toujours « installez exactement ceci ».
+
+- **En attente** : chaque player Linux / Raspberry Pi affiche ses mises à jour en attente (celles de
+  sécurité en rouge) et son dernier relevé (toutes les 6 h, ou **Relever maintenant**). Rien ne
+  s'installe tout seul.
+- **Banc** (exploitant du serveur seulement) : choisir un player, **Mettre à jour ce banc**. Il
+  installe tout ce qui est en attente, redémarre si besoin, et remonte la liste exacte des paquets
+  changés : le **manifeste** (affiché « à approuver »). Une seule demande de banc à la fois par player.
+- **Approuver** (exploitant du serveur seulement), après avoir testé l'écran du banc.
+- **Déployer** (chaque admin d'organisation, sur ses écrans) : cible, fenêtre d'installation si
+  besoin, **Players à la fois** (1 par défaut). Un manifeste ne part que sur les players de la **même
+  famille d'OS** que le banc (`debian-12-amd64`, `raspios-13-arm64`…) ; avec un player choisi, seuls
+  les manifestes de sa famille sont proposés. Un manifeste non approuvé ne part que sur un seul player.
+- **Sécurité** : chaque player installe ce manifeste et rien d'autre (apt simulé d'abord, tout ce qui
+  sort est refusé) ; jamais de retour en arrière de version ; redémarrage seul si un paquet l'exige ;
+  succès seulement une fois revenu. **Manifeste périmé** = une version a quitté l'archive : remettre
+  un banc à jour. Le déploiement s'arrête au premier échec.
+- Un player marqué « Mises à jour OS non installées » a besoin, une fois, de
+  `sudo bash scripts/install-os-update.sh`, lancé depuis une copie neuve de la release (jamais depuis
+  le dossier du player).
+- Les players Windows ne sont pas encore couverts.
 
 ## Mettre à jour par l'assistant
 

@@ -105,7 +105,8 @@ separately: **Settings → Updates → "Electron engine" button** (drawer).
   platforms, **Get**. The server downloads the official release, checks its checksum and stores
   it; it arrives in **beta**.
 - **Deploy** (each org admin, to their own screens): in "Deploy to", choose the target and time
-  windows, then **Deploy** on the wanted row. With a player selected, only its platform's versions
+  windows, and **Players at a time** (default 1: the next player gets the engine only once the
+  previous one has finished), then **Deploy** on the wanted row. With a player selected, only its platform's versions
   are listed. A **beta** version can only be tried on **one player**; once the operator
   **promotes** it, it can go to groups, sites or the whole organisation.
 - **Safety**: the player tries the new engine; if it does not confirm rendering within
@@ -119,6 +120,29 @@ separately: **Settings → Updates → "Electron engine" button** (drawer).
   its launcher is refreshed (re-run `install.sh` / `install.ps1`).
 - A deployment succeeds only when the player reports the end of its trial **and** reports the target
   version: a version seen during the trial does not count.
+
+## Operating system updates (Linux, Raspberry Pi)
+
+**Settings → Updates → "OS updates" button** (drawer). Principle: never "update yourselves", always
+"install exactly this".
+
+- **Pending updates**: each Linux / Raspberry Pi player shows how many updates are pending (security
+  ones in red) and when it last checked (every 6 hours, or **Check now**). Nothing installs by itself.
+- **Bench** (server operator only): choose a player, **Update this bench**. It installs everything
+  pending, reboots if needed, and reports the exact list of packages it changed: the **manifest**
+  (shown "to approve"). Only one bench request at a time per player.
+- **Approve** (server operator only), after testing the bench screen.
+- **Deploy** (each org admin, to their own screens): target, optional install window, **Players at a
+  time** (default 1). A manifest only goes to players of the **same OS family** as the bench
+  (`debian-12-amd64`, `raspios-13-arm64`…); with a player selected, only its family's manifests are
+  listed. An unapproved manifest can only go to one player.
+- **Safety**: each player installs that manifest and nothing else (apt simulated first, anything
+  outside refused); never downgrades; reboots on its own when a package needs it; success only once
+  back. **Manifest obsolete** = a version has left the archive: update a bench again. The deployment
+  stops at the first failure.
+- A player showing "OS updates not set up" needs `sudo bash scripts/install-os-update.sh` once, run
+  from a fresh copy of the release (never from the player's own folder).
+- Windows players are not covered yet.
 
 ## Update through the assistant
 

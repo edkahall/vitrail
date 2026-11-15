@@ -362,8 +362,9 @@ part, depuis **Réglages → Mises à jour → Moteur Electron** :
    d'Electron, la vérifie contre le `SHASUMS256.txt` publié par Electron, la reconditionne et la
    stocke. Elle arrive en **bêta**. Les players ne téléchargent jamais rien sur Internet.
 2. **Chaque admin d'organisation** la déploie sur ses propres écrans, depuis le même tiroir :
-   cible, fenêtres horaires si besoin, puis **Déployer**. Un moteur bêta ne s'essaie que sur **un
-   seul player** à la fois. Une fois **promu** par l'exploitant, il peut partir sur des groupes, des
+   cible, fenêtres horaires si besoin et **Players à la fois** (1 par défaut : le player suivant ne
+   reçoit le moteur qu'une fois le précédent terminé), puis **Déployer**. Un moteur bêta ne s'essaie
+   que sur **un seul player** à la fois. Une fois **promu** par l'exploitant, il peut partir sur des groupes, des
    sites ou toute l'organisation.
 3. Le player télécharge le moteur, le vérifie, l'extrait à côté de l'actuel, puis passe la main à
    un petit garde et s'arrête. Le garde bascule les moteurs et relance le player. Le nouveau
@@ -383,6 +384,41 @@ moment pourrait laisser l'écran noir.
 Le déploiement n'est déclaré réussi que lorsque le player signale que son essai s'est bien terminé
 **et** que la version d'Electron qu'il remonte est la cible ; une version remontée pendant l'essai
 ne compte pas.
+
+### Mises à jour du système (players Linux et Raspberry Pi)
+
+Vitrail ne dit jamais aux players « mettez-vous à jour » ; il leur dit « installez exactement
+ceci ». Depuis **Réglages → Mises à jour → Mises à jour OS** :
+
+1. Chaque player Linux / Raspberry Pi affiche ses **mises à jour en attente** (dont celles de
+   sécurité) et la date de son dernier relevé. Rien ne s'installe tout seul.
+2. **L'exploitant du serveur** choisit un player de **banc** et clique **Mettre à jour ce banc**.
+   Le banc installe tout ce qui est en attente, redémarre si un paquet l'exige, et remonte la liste
+   exacte des paquets qu'il a changés : le **manifeste**. Il arrive **à approuver**.
+3. L'exploitant teste l'écran du banc, puis **approuve** le manifeste.
+4. **Chaque admin d'organisation** le déploie sur ses écrans (cible, fenêtre d'installation si
+   besoin, players à la fois). Un manifeste ne part que sur les players de la **même famille d'OS**
+   que le banc (`debian-12-amd64`, `raspios-13-arm64`…). Un manifeste non approuvé ne part que sur un
+   seul player.
+5. Chaque player installe **ce manifeste et rien d'autre** : apt est d'abord simulé, et tout ce qui
+   sort du manifeste (une autre version, une suppression) est refusé. Une version sortie de
+   l'archive Debian donne **manifeste périmé** : remettre un banc à jour. Les players ne
+   descendent jamais de version, redémarrent seuls si besoin, et ne comptent comme réussis qu'une
+   fois revenus. Le déploiement avance un player à la fois par défaut et s'arrête au premier échec.
+
+Root n'est utilisé que par un petit script, `signflow-os-update`, lancé par une unité systemd que
+polkit autorise au compte du player ; il valide chaque ligne de la demande et n'écrit que dans son
+propre dossier root (`/var/lib/signflow-os-update/`). Une installation neuve le reçoit par
+`install.sh`. **Les players installés avant cette fonction** en ont besoin une fois :
+
+```bash
+sudo bash scripts/install-os-update.sh            # depuis player-linux/ ou player-rpi/
+```
+
+À lancer depuis une **copie neuve de la release** (git clone ou archive téléchargée), jamais depuis
+le dossier du player : le compte du player peut réécrire ce dossier, et ce script tourne en root.
+
+Les players Windows ne sont pas encore couverts (voir l'issue #6).
 
 ## 8. Assistant Telegram (« Jeanine »)
 

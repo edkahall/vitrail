@@ -49,6 +49,20 @@ restarts the player and puts the previous engine back if the new one does not co
 within 5 minutes. The launcher runs `engine_guard.js boot-check` before Electron (power cut during
 a switch). Log: `node_modules/electron/engine-guard.log`. `install.sh` gives `node_modules` to the player account (no root needed to switch engines); the guard restarts Electron itself (detached, same environment).
 
+
+## OS updates (Debian / Raspberry Pi OS)
+
+Controlled from the server (**Settings → Updates → OS updates**): a bench player installs what is
+pending and reports the exact list of packages it changed (the manifest); once approved, the other
+players install that manifest and nothing else. `src/os_update.js` never runs apt itself: it drops
+a request in `/var/lib/signflow/os-update/` and starts `signflow-os-update.service` (allowed by a
+polkit rule), which runs the root helper `scripts/signflow-os-update` (installed to
+`/usr/local/bin`). The helper validates every line, simulates apt before installing, and writes its
+status and results to `/var/lib/signflow-os-update/` (root-owned). `install.sh` sets it up; on a
+player installed before this feature run `sudo bash scripts/install-os-update.sh` once, **from a
+fresh copy of the release, never from the player's own folder** (the player account can rewrite it).
+Logs: `journalctl -u signflow-os-update`, `/var/lib/signflow-os-update/last-run.log`.
+
 ## Config
 
 `~/.config/signflow-player/config.json` — directory **derived from the `name` in `package.json`**
