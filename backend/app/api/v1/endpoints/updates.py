@@ -34,6 +34,7 @@ from app.schemas.updates import (
     EngineFetchJob,
     EngineFetchRequest,
     DeploymentDetail,
+    OsPlayerRequest,
     DeploymentRead,
     DeploymentTargetRead,
     RendererVersionRead,
@@ -99,7 +100,9 @@ async def _require_operator_for_engine(
     """Principe 3 (vitrail#5) : le CATALOGUE des moteurs appartient à l'exploitant du serveur ⇒
     seul lui promeut (= approuve) ou supprime une version moteur. Le déploiement, lui, suit
     `_check_engine_deploy`."""
-    if row.track == ota.ENGINE_TRACK and not await rbac.user_is_server_operator(wdb, user):
+    # OS (vitrail#6) : même règle — un manifeste touche tous les écrans du serveur, toutes
+    # organisations confondues ; seul l'exploitant l'approuve (promotion) ou le supprime.
+    if row.track in ota.SEPARATE_TRACKS and not await rbac.user_is_server_operator(wdb, user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Restricted to the server operator")
 
@@ -112,17 +115,18 @@ async def _check_engine_deploy(
     admin d'organisation déploie sur SES écrans — une version STABLE (approuvée) sur toute
     cible, une version BÊTA sur un seul player à la fois (le banc). Un déploiement appartient
     à l'organisation de son auteur : l'exploitant ne peut pas déployer chez une autre."""
-    if version.track != ota.ENGINE_TRACK or version.channel == "stable":
+    if version.track not in ota.SEPARATE_TRACKS or version.channel == "stable":
         return
     if await rbac.user_is_server_operator(wdb, user):
         return
     single_player = (len(targets) == 1 and targets[0].target_type == "player"
                      and targets[0].target_id is not None)
     if not single_player:
+        what = "OS manifest" if version.track == ota.OS_TRACK else "engine"
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="A beta engine can only be deployed to a single player (test bench) "
-                   "until the server operator promotes it.")
+            detail=f"A beta {what} can only be deployed to a single player (test bench) "
+                   "until the server operator approves it.")
 
 
 @router.post("/engines/fetch", response_model=list[EngineFetchJob],
@@ -150,6 +154,67 @@ async def engines_fetch(
         fetch_engine.delay(job_id, version, family)
         jobs.append(EngineFetchJob(job_id=job_id, family=family, version=version))
     return jobs
+
+
+# ── Mises à jour OS contrôlées (vitrail#6) ────────────────────────────────────────────────
+def _os_capable(player: CmsPlayer) -> bool:
+    caps = player.capabilities if isinstance(player.capabilities, dict) else {}
+    osu = caps.get("os_update")
+    return isinstance(osu, dict) and bool(osu.get("helper"))
+
+
+@router.post("/os/bench", status_code=status.HTTP_202_ACCEPTED)
+async def os_bench(
+    body: OsPlayerRequest,
+    current_user: Annotated[CmsUser, Depends(require_server_operator)],
+    wdb: Annotated[AsyncSession, Depends(get_db_worker)],
+) -> dict:
+    """Met à jour l'OS d'un player de BANC (exploitant du serveur seulement). Le banc installe
+    tout ce qui est en attente puis remonte la liste exacte de ce qui a changé : le manifeste,
+    créé en bêta. Après l'avoir testé, l'exploitant l'approuve (promotion) et le parc le reçoit."""
+    player = (await wdb.execute(
+        select(CmsPlayer).where(CmsPlayer.id_player == body.id_player)
+    )).scalar_one_or_none()
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found.")
+    if not _os_capable(player):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This player cannot update its OS: run install-os-update.sh once on it with "
+                   "sudo, from a fresh copy of the release (never from the player's own folder), "
+                   "with a player version that supports OS updates.")
+    if player.status != "online":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="The player is offline: the request would be lost.")
+    from app.services import os_updates
+    try:
+        request_id = await os_updates.request_bench(player.id_player, current_user.id_user)
+    except os_updates.BenchPending:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="A bench update is already running on this player: wait for "
+                                   "its manifest.")
+    return {"request_id": request_id}
+
+
+@router.post("/os/check", status_code=status.HTTP_202_ACCEPTED)
+async def os_check(
+    body: OsPlayerRequest,
+    current_user: Annotated[CmsUser, Depends(require_org_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Demande à un player de relever maintenant ses mises à jour OS en attente (rien installé)."""
+    player = (await db.execute(
+        select(CmsPlayer).where(CmsPlayer.id_player == body.id_player,
+                                CmsPlayer.id_org == current_user.id_org)
+    )).scalar_one_or_none()
+    if player is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found.")
+    if not _os_capable(player):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="This player cannot report its OS updates yet.")
+    from app.services import os_updates
+    await os_updates.request_check(player.id_player)
+    return {"status": "sent"}
 
 
 @router.get("/engines/jobs/{job_id}")
@@ -281,16 +346,29 @@ async def updates_parc(
 
 @router.get("/versions", response_model=list[UpdateVersionRead])
 async def updates_versions(
-    _: Annotated[CmsUser, Depends(require_org_admin)],
+    current_user: Annotated[CmsUser, Depends(require_org_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    wdb: Annotated[AsyncSession, Depends(get_db_worker)],
     track: str = "player",
-) -> list[CmsPlayerUpdateVersion]:
+) -> list:
     """Catalogue de versions (par track), plus récentes d'abord."""
-    return list((await db.execute(
+    rows = list((await db.execute(
         select(CmsPlayerUpdateVersion)
         .where(CmsPlayerUpdateVersion.track == track)
         .order_by(CmsPlayerUpdateVersion.created_at.desc())
     )).scalars().all())
+    if track != ota.OS_TRACK or await rbac.user_is_server_operator(wdb, current_user):
+        return rows
+    # Catalogue commun, banc d'une autre organisation : l'admin d'org voit la liste des paquets,
+    # pas les identifiants du player et du compte qui l'ont produite (revue du 15/11).
+    out = []
+    for r in rows:
+        d = UpdateVersionRead.model_validate(r).model_dump()
+        if isinstance(d.get("manifest"), dict):
+            d["manifest"] = {k: v for k, v in d["manifest"].items()
+                             if k not in ("source_player", "requested_by")}
+        out.append(d)
+    return out
 
 
 def _validated_min_firmware(value: str | None, model_family: str | None) -> str | None:

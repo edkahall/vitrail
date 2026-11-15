@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 # Une cible qui a DÉMARRÉ l'apply (downloading/installing) mais ne confirme pas dans ce délai est
 # déclarée en échec (le déploiement peut alors se terminer et alerter). Pending/queued = épargnés.
 _TARGET_TIMEOUT_S = 30 * 60
+# Mise à jour OS (vitrail#6) : apt sur un Raspberry Pi + redémarrage dépasse vite 30 min. Même
+# plafond que l'unité systemd du script root (TimeoutStartSec=3h).
+_OS_TARGET_TIMEOUT_S = 3 * 3600
 
 _TERMINAL = ("success", "failed", "cancelled", "rolled_back")
 
@@ -119,12 +122,50 @@ def _rollup(conn, id_deployment: int) -> None:
             logger.exception("dispatch deployment_failed failed (deployment %s)", id_deployment)
 
 
+def _publish_force_sync(player_ids: list[int]) -> None:
+    import json
+
+    import redis
+
+    r = redis.Redis.from_url(settings.REDIS_URL)
+    try:
+        for pid in player_ids:
+            r.publish(f"signflow:player:{pid}:cmds", json.dumps({"type": "player:force_sync"}))
+    finally:
+        r.close()
+
+
+def _nudge_next_wave(conn, id_deployment: int) -> list[int]:
+    """Vagues (moteur, OS) : après chaque transition, les cibles encore en attente d'un
+    déploiement actif re-synchronisent — celles qui entrent dans la vague reçoivent la directive
+    tout de suite, au lieu d'attendre leur prochaine synchro (qui peut ne venir qu'au prochain
+    changement de contenu). Les autres recalculent et ne reçoivent rien."""
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT t.id_player FROM cms_update_deployment_targets t "
+        "JOIN cms_update_deployments d ON d.id_deployment = t.id_deployment "
+        "JOIN cms_player_update_versions v ON v.id_version = d.id_version "
+        "WHERE t.id_deployment = %s AND t.status = 'pending' "
+        "AND d.status IN ('pending', 'in_progress') AND v.track IN ('engine', 'os')",
+        (id_deployment,),
+    )
+    ids = [row[0] for row in cur.fetchall()]
+    conn.rollback()
+    if ids:
+        try:
+            _publish_force_sync(ids)
+        except Exception:  # noqa: BLE001 — best-effort : la directive viendra à leur prochaine synchro
+            logger.exception("force_sync next wave failed (deployment %s)", id_deployment)
+    return ids
+
+
 @celery_app.task(name="app.workers.ota_worker.ota_rollup")
 def ota_rollup(id_deployment: int) -> dict:
     """Recalcule un déploiement (enqueue par le noyau WS à chaque transition de cible)."""
     conn = _db_conn()
     try:
         _rollup(conn, id_deployment)
+        _nudge_next_wave(conn, id_deployment)
     finally:
         conn.close()
     return {"id_deployment": id_deployment}
@@ -142,13 +183,17 @@ def ota_timeout() -> dict:
         # peuvent durer (fenêtre de download windowée, attente de la fenêtre de maintenance) → jamais
         # de faux échec sur une cible qui attend légitimement sa fenêtre.
         cur.execute(
-            "UPDATE cms_update_deployment_targets "
-            "SET status = 'failed', error_message = COALESCE(error_message, 'timeout : install non "
+            "UPDATE cms_update_deployment_targets t "
+            "SET status = 'failed', error_message = COALESCE(t.error_message, 'timeout : install non "
             "confirmée'), completed_at = now() "
-            "WHERE status = 'installing' AND started_at IS NOT NULL "
-            "AND started_at < now() - make_interval(secs => %s) "
-            "RETURNING id_deployment",
-            (_TARGET_TIMEOUT_S,),
+            "FROM cms_update_deployments d "
+            "JOIN cms_player_update_versions v ON v.id_version = d.id_version "
+            "WHERE t.id_deployment = d.id_deployment "
+            "AND t.status = 'installing' AND t.started_at IS NOT NULL "
+            "AND t.started_at < now() - make_interval(secs => "
+            "CASE WHEN v.track = 'os' THEN %s ELSE %s END) "
+            "RETURNING t.id_deployment",
+            (_OS_TARGET_TIMEOUT_S, _TARGET_TIMEOUT_S),
         )
         dep_ids = {row[0] for row in cur.fetchall()}
         conn.commit()

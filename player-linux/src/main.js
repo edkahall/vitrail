@@ -13,6 +13,7 @@ const { LanSyncController }       = require('./sync_lan');
 const { LocalControlServer }      = require('./local_control_server');
 const { ContentStore }            = require('./content_store');
 const { EngineUpdater }           = require('./engine_update');
+const { OsUpdater }               = require('./os_update');
 const { VodLanController }        = require('./vod_lan');
 const { MpvController }            = require('./mpv_controller');
 
@@ -1666,6 +1667,32 @@ function _sendEngineStatus(id_deployment, status, error) {
   } catch {}
   return false;
 }
+// ── Mises à jour contrôlées de l'OS (issue vitrail#6) ───────────────────────────
+// Module partagé à l'identique par player-linux et player-rpi (os_update.js). Directive dans la
+// clé `os_update` du sync ; commandes `os_bench` (exploitant) et `os_check`. Le player ne lance
+// jamais apt : il dépose une demande au script root (unité systemd autorisée par polkit).
+let _osUpdater = null;
+let _osTimer = null;
+function getOsUpdater() {
+  if (!_osUpdater) {
+    _osUpdater = new OsUpdater({
+      getConfig: () => config,
+      saveConfig: () => saveConfig(),
+      send: (m) => {
+        try {
+          if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify(m)); return true; }
+        } catch {}
+        return false;
+      },
+      sendStatus: _sendEngineStatus,
+      log: (m) => _writeLog('os', m),
+      inWindow: (w) => _inWindow(w),
+    });
+  }
+  if (!_osTimer) _osTimer = setInterval(() => _osUpdater.tick(), 60 * 1000);
+  return _osUpdater;
+}
+
 function getEngineUpdater() {
   if (!_engineUpdater) {
     _engineUpdater = new EngineUpdater({
@@ -1717,6 +1744,8 @@ function handleServerMessage(msg) {
       if (msg.update) handleUpdateDirective(msg.update);
       // Moteur (vitrail#5) : clé présente seulement sur un serveur qui la connaît ; null = rien à faire.
       if ('engine_update' in msg) getEngineUpdater().handle(msg.engine_update);
+      // OS (vitrail#6) : même principe, clé séparée ; null = rien à installer.
+      if ('os_update' in msg) getOsUpdater().handle(msg.os_update);
 
       // Download-then-play STRICT (anti-stream auto serveur) : tant que TOUTES les vidéos du
       // nouveau contenu ne sont pas en cache local, on RETIENT le sync — le renderer garde le
@@ -1843,6 +1872,12 @@ function handleCommand(command, params) {
       });
       break;
     }
+    case 'os_bench':   // vitrail#6 : mise à jour du banc demandée par l'exploitant du serveur
+      getOsUpdater().bench(params.request_id);
+      break;
+    case 'os_check':   // vitrail#6 : relever maintenant les mises à jour en attente
+      getOsUpdater().check();
+      break;
     case 'detect_capabilities': {
       // Relance la detection HW (ecrit capabilities.json) puis recharge la variable.
       // Le prochain heartbeat (<=10s) remonte les nouvelles capacites au serveur.
@@ -2137,6 +2172,8 @@ function buildCapabilities() {
   if (contentStore) caps.store = contentStore.getStorageStatus();
   // Version du moteur : c'est elle qui fait constater au serveur le succès d'une MAJ moteur.
   caps.electron_version = process.versions.electron;
+  // Mises à jour OS (vitrail#6) : en attente, dernier relevé, dernière opération.
+  try { caps.os_update = getOsUpdater().capabilities(); } catch (e) { caps.os_update = { helper: false }; }
   // Mode mpv (HW VAAPI hors Chromium) : le décodage matériel EST actif via mpv, alors que
   // capabilities.json (mesuré côté Chromium) le marque inactif sur Intel/Linux. On le reflète
   // dans le heartbeat → (a) badge "Matériel" côté CMS, (b) le plafond de rendition logiciel

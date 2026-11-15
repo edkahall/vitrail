@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import CmsSite
@@ -44,6 +44,22 @@ BUNDLE_PLATFORMS = {"linux", "rpi", "windows", "android"}
 # moteur par-dessus son application.
 ENGINE_TRACK = "engine"
 ENGINE_FAMILIES = {"linux-arm64", "linux-x64", "windows"}
+
+# Piste des mises à jour de l'OS (issue vitrail#6). Une version `os` est un MANIFESTE relevé sur
+# un player de banc (colonne `manifest`) ; son `model_family` est la FAMILLE D'OS du banc
+# (« debian-12-amd64 », « raspios-13-arm64 »), remontée par le player dans
+# `capabilities.os_update.family`. Elle voyage dans sa propre clé du payload (`os_update`) —
+# jamais `update` ni `engine_update`. Version = horodatage du relevé (« 20261115-163000 »).
+OS_TRACK = "os"
+# Pistes qui ont leur PROPRE clé de directive : la clé historique `update` ne les porte jamais.
+SEPARATE_TRACKS = (ENGINE_TRACK, OS_TRACK)
+# Vagues (revue indépendante du 15/11) : sans elles, « arrêt au premier échec » ne protégeait
+# personne — tous les players visés recevaient la directive à la même minute, un manifeste qui
+# casse le démarrage aurait cassé tout le parc avant le premier échec. Moteur et OS partent donc
+# par vagues de `wave_size` players (défaut 1) : le suivant n'est servi qu'à la fin du précédent.
+WAVE_DEFAULT = 1
+WAVE_MAX = 50
+_ACTIVE = ("queued", "downloading", "staged", "installing")
 # player_os → plateforme de bundle autorisée (garde anti-mismatch, incident 2026-07-06 :
 # un player linux qui télécharge un bundle windows l'installe par-dessus son code).
 # Android (2026-07-19) : toutes les ABI partagent le même APK universel → un seul artefact.
@@ -161,6 +177,7 @@ async def parc_inventory(db: AsyncSession, id_org: int) -> list[dict]:
         # remontait. Un recul n'est pas un retard, et il ne doit pas pouvoir se cacher derrière.
         caps = p.capabilities if isinstance(p.capabilities, dict) else {}
         degraded = caps.get("renderer_degraded") or None
+        osu = caps.get("os_update") if isinstance(caps.get("os_update"), dict) else None
         out.append({
             "id_player": p.id_player, "player_name": p.player_name, "player_os": p.player_os,
             "status": p.status, "current_version": cur, "latest_version": latest_ver,
@@ -168,6 +185,8 @@ async def parc_inventory(db: AsyncSession, id_org: int) -> list[dict]:
             "renderer_degraded": degraded,
             # Moteur Electron courant (vitrail#5) : None pour les players non Electron.
             "electron_version": engine_version_of(caps),
+            # Mises à jour OS en attente (vitrail#6) : None si le player ne sait pas les relever.
+            "os_update": os_update_summary(osu),
             "id_latest_version": latest.id_version if latest else None,
             "site": sites.get(p.id_site) if p.id_site else None,
             "groups": sorted(groups_by_player.get(p.id_player, [])),
@@ -242,7 +261,16 @@ async def create_deployment(
     version = (await db.execute(
         select(CmsPlayerUpdateVersion).where(CmsPlayerUpdateVersion.id_version == id_version)
     )).scalar_one_or_none()
-    if player_ids and version is not None and version.model_family:
+    if player_ids and version is not None and version.track == OS_TRACK:
+        # Manifeste OS (vitrail#6) : ne cible QUE les players de la même famille d'OS — un
+        # manifeste Debian 12 amd64 n'a aucun sens sur un Raspberry Pi OS 13, ni sur un Windows.
+        rows = (await db.execute(
+            select(CmsPlayer.id_player, CmsPlayer.capabilities)
+            .where(CmsPlayer.id_player.in_(player_ids))
+        )).all()
+        player_ids = sorted(pid for pid, caps in rows
+                            if os_family_of(caps) == (version.model_family or ""))
+    elif player_ids and version is not None and version.model_family:
         fam = version.model_family.lower()
         if fam in BUNDLE_PLATFORMS:
             # Version issue d'un IMPORT de bundle : `model_family` est une PLATEFORME
@@ -264,8 +292,9 @@ async def create_deployment(
     # bouton ne montrait rien, 4 clics = 4 déploiements identiques). Refusé EN NOMMANT les players.
     if player_ids:
         same_or_engine = (CmsUpdateDeployment.id_version == id_version)
-        if version is not None and version.track == ENGINE_TRACK:
-            same_or_engine = or_(same_or_engine, CmsPlayerUpdateVersion.track == ENGINE_TRACK)
+        if version is not None and version.track in SEPARATE_TRACKS:
+            # Moteur ou OS : une seule opération de cette piste à la fois par player.
+            same_or_engine = or_(same_or_engine, CmsPlayerUpdateVersion.track == version.track)
         dup = (await db.execute(
             select(CmsPlayer.player_name, CmsPlayer.id_player)
             .join(CmsUpdateDeploymentTarget, CmsUpdateDeploymentTarget.id_player == CmsPlayer.id_player)
@@ -328,8 +357,10 @@ async def create_deployment(
     # Moteur (vitrail#5, décision D3) : arrêt au PREMIER échec ou retour arrière, sauf refus
     # explicite. Un moteur qui casse un écran ne doit pas partir sur les suivants.
     strategy_params = dict(strategy_params or {})
-    if version is not None and version.track == ENGINE_TRACK:
+    if version is not None and version.track in SEPARATE_TRACKS:
+        # OS (vitrail#6) : même règle — une mise à jour qui casse un écran s'arrête là.
         strategy_params.setdefault("stop_on_failure", True)
+        strategy_params["wave_size"] = clamp_wave(strategy_params.get("wave_size"))
 
     now = datetime.now(UTC).replace(tzinfo=None)   # colonne TIMESTAMP naïf (asyncpg)
     dep = CmsUpdateDeployment(
@@ -349,6 +380,9 @@ async def create_deployment(
         if version is not None and version.track == ENGINE_TRACK:
             # Base du retour arrière d'un moteur = l'Electron COURANT, pas la version du code.
             versions = {pid: engine_version_of(caps) for pid, _ver, caps in rows}
+        elif version is not None and version.track == OS_TRACK:
+            # Pas de retour arrière pour apt : on garde le dernier manifeste appliqué, pour mémoire.
+            versions = {pid: os_applied_of(caps) for pid, _ver, caps in rows}
         else:
             versions = {pid: ver for pid, ver, _caps in rows}
     for pid in player_ids:
@@ -393,12 +427,87 @@ def engine_version_of(capabilities: dict | None) -> str | None:
     return str(v) if v else None
 
 
+def clamp_wave(value: object) -> int:
+    """Taille de vague valide (1..WAVE_MAX) ; illisible ou absente → WAVE_DEFAULT."""
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return WAVE_DEFAULT
+    return max(1, min(WAVE_MAX, n))
+
+
+async def _served_in_this_wave(db: AsyncSession, target: CmsUpdateDeploymentTarget,
+                               dep: CmsUpdateDeployment) -> bool:
+    """Vagues : une cible déjà partie (en cours) est toujours servie ; une cible en attente ne
+    l'est que s'il reste une place dans la vague ET qu'elle fait partie des premières cibles en
+    attente dont le player est EN LIGNE (ordre stable = id_target). Le classement est
+    déterministe : deux players qui synchronisent en même temps ne peuvent pas se croire tous
+    deux dans la vague. Un player hors ligne ne bloque pas la vague (il passe son tour)."""
+    if target.status != "pending":
+        return True
+    wave = clamp_wave((dep.strategy_params or {}).get("wave_size"))
+    active = (await db.execute(
+        select(func.count()).select_from(CmsUpdateDeploymentTarget).where(
+            CmsUpdateDeploymentTarget.id_deployment == dep.id_deployment,
+            CmsUpdateDeploymentTarget.status.in_(_ACTIVE),
+        )
+    )).scalar_one()
+    room = wave - active
+    if room <= 0:
+        return False
+    first = (await db.execute(
+        select(CmsUpdateDeploymentTarget.id_target)
+        .join(CmsPlayer, CmsPlayer.id_player == CmsUpdateDeploymentTarget.id_player)
+        .where(
+            CmsUpdateDeploymentTarget.id_deployment == dep.id_deployment,
+            CmsUpdateDeploymentTarget.status == "pending",
+            CmsPlayer.status == "online",
+        )
+        .order_by(CmsUpdateDeploymentTarget.id_target)
+        .limit(room)
+    )).scalars().all()
+    return target.id_target in first
+
+
+def os_family_of(capabilities: dict | None) -> str | None:
+    """Famille d'OS remontée par le player (`capabilities.os_update.family`), vitrail#6."""
+    osu = (capabilities or {}).get("os_update") if isinstance(capabilities, dict) else None
+    fam = osu.get("family") if isinstance(osu, dict) else None
+    return str(fam) if fam else None
+
+
+def os_applied_of(capabilities: dict | None) -> str | None:
+    """Dernier manifeste OS appliqué avec succès, selon le player."""
+    osu = (capabilities or {}).get("os_update") if isinstance(capabilities, dict) else None
+    v = osu.get("applied") if isinstance(osu, dict) else None
+    return str(v)[:20] if v else None
+
+
+def os_update_summary(osu: dict | None) -> dict | None:
+    """Vue courte de l'état OS d'un player pour l'inventaire (jamais la liste complète)."""
+    if not isinstance(osu, dict):
+        return None
+    run = osu.get("run") if isinstance(osu.get("run"), dict) else None
+    return {
+        "helper": bool(osu.get("helper")),
+        "family": osu.get("family"),
+        "pending": osu.get("pending"),
+        "security": osu.get("security"),
+        "checked_at": osu.get("checked_at"),
+        "last_upgrade": osu.get("last_upgrade"),
+        "reboot_required": bool(osu.get("reboot_required")),
+        "update_error": osu.get("update_error") or None,
+        "applied": osu.get("applied"),
+        "run": run,
+    }
+
+
 def _track_filter(track: str | None):
-    """`engine` → la seule piste moteur ; sinon → TOUT SAUF le moteur (comportement historique
-    de la clé `update` : piste player, et firmware BrightSign qui l'emprunte aussi)."""
-    if track == ENGINE_TRACK:
-        return CmsPlayerUpdateVersion.track == ENGINE_TRACK
-    return CmsPlayerUpdateVersion.track != ENGINE_TRACK
+    """`engine`/`os` → cette seule piste ; sinon → TOUT SAUF les pistes à clé séparée
+    (comportement historique de la clé `update` : piste player, et firmware BrightSign)."""
+    if track in SEPARATE_TRACKS:
+        return CmsPlayerUpdateVersion.track == track
+    return CmsPlayerUpdateVersion.track.notin_(SEPARATE_TRACKS)
 
 
 async def directive_for_player(
@@ -429,6 +538,15 @@ async def directive_for_player(
         return None
     target, dep, ver = row
     params = dep.strategy_params or {}
+    if ver.track in SEPARATE_TRACKS and not await _served_in_this_wave(db, target, dep):
+        return None
+    extra: dict = {}
+    if ver.track == OS_TRACK:
+        # Le manifeste voyage avec la directive : le player le passe tel quel au script root, qui
+        # refuse tout ce qui n'y est pas. `name:arch=version`, déjà validé à l'enregistrement.
+        m = ver.manifest if isinstance(ver.manifest, dict) else {}
+        extra["packages"] = [f"{p['name']}:{p['arch']}={p['version']}"
+                             for p in (m.get("packages") or []) if isinstance(p, dict)]
     if dep.strategy == "scheduled":
         start_at = params.get("start_at")
         if start_at:
@@ -452,6 +570,7 @@ async def directive_for_player(
         "download_window": params.get("download_window"),
         "install_window": params.get("install_window"),
         "force": bool(params.get("force")),
+        **extra,
     }
 
 
@@ -529,6 +648,14 @@ async def report_target(
             )).scalar_one_or_none()
             if engine_version_of(caps) != row.version:
                 return False
+        if row is not None and row.track == OS_TRACK:
+            # OS (vitrail#6) : le player doit remonter CE manifeste comme appliqué (après son
+            # redémarrage s'il en fallait un). Sinon ignoré : il le redira au sync suivant.
+            caps = (await db.execute(
+                select(CmsPlayer.capabilities).where(CmsPlayer.id_player == id_player)
+            )).scalar_one_or_none()
+            if os_applied_of(caps) != row.version:
+                return False
     now = datetime.now(UTC).replace(tzinfo=None)
     tgt.status = new_status
     # `started_at` = base du timeout : posé (réinitialisé) à l'ENTRÉE en `installing` uniquement →
@@ -542,3 +669,71 @@ async def report_target(
             tgt.error_message = (error or "")[:1000]
     await db.flush()
     return True
+
+
+# ── Mises à jour OS : enregistrement du manifeste relevé sur le banc (vitrail#6) ────────────
+_OS_FAMILY_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{2,49}$")
+_PKG_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9+.-]*$")
+_PKG_ARCH_RE = re.compile(r"^[a-z0-9-]+$")
+_PKG_VER_RE = re.compile(r"^[A-Za-z0-9.+~:-]+$")
+OS_MANIFEST_MAX_PACKAGES = 3000
+
+
+class OsManifestRejected(ValueError):
+    """Manifeste remonté par un player, refusé (forme invalide)."""
+
+
+def validate_os_packages(packages: object) -> list[dict]:
+    """Normalise et valide la liste de paquets d'un manifeste. Lève OsManifestRejected.
+
+    Même grammaire que le script root (`signflow-os-update`), qui la revérifie de son côté : une
+    entrée qui ne passerait pas là-bas ne doit pas entrer au catalogue ici."""
+    if not isinstance(packages, list) or len(packages) > OS_MANIFEST_MAX_PACKAGES:
+        raise OsManifestRejected("packages must be a list of at most 3000 entries")
+    out: list[dict] = []
+    seen: set[str] = set()
+    for p in packages:
+        if not isinstance(p, dict):
+            raise OsManifestRejected("invalid package entry")
+        name, arch, ver = str(p.get("name") or ""), str(p.get("arch") or ""), str(p.get("version") or "")
+        # fullmatch, jamais match : `$` accepte un saut de ligne final (« 1.0\n » passait ici, puis
+        # le player l'écartait en silence et n'appliquait qu'une partie du manifeste — revue du 15/11).
+        if not (_PKG_NAME_RE.fullmatch(name) and _PKG_ARCH_RE.fullmatch(arch)
+                and _PKG_VER_RE.fullmatch(ver)):
+            raise OsManifestRejected(f"invalid package: {name[:60]}")
+        key = f"{name}:{arch}"
+        if key in seen:
+            raise OsManifestRejected(f"duplicate package: {key}")
+        seen.add(key)
+        out.append({"name": name, "arch": arch, "version": ver})
+    return sorted(out, key=lambda x: (x["name"], x["arch"]))
+
+
+async def register_os_manifest(
+    db: AsyncSession, id_player: int, family: str, packages: object,
+    reboot_required: bool, requested_by: int | None,
+) -> CmsPlayerUpdateVersion | None:
+    """Crée la version `os` (BÊTA = non approuvée) d'un relevé de banc. Aucun paquet changé →
+    None (rien à approuver). L'approbation = promotion par l'exploitant du serveur."""
+    if not _OS_FAMILY_RE.fullmatch(family or ""):
+        raise OsManifestRejected("invalid OS family")
+    # La famille annoncée doit être celle que CE player remonte (revue du 15/11) : un banc ne
+    # peut pas étiqueter son relevé pour une autre famille d'OS.
+    caps = (await db.execute(
+        select(CmsPlayer.capabilities).where(CmsPlayer.id_player == id_player)
+    )).scalar_one_or_none()
+    if os_family_of(caps) != family:
+        raise OsManifestRejected("OS family does not match the bench player")
+    pkgs = validate_os_packages(packages)
+    if not pkgs:
+        return None
+    version = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    row = CmsPlayerUpdateVersion(
+        track=OS_TRACK, version=version, channel="beta", model_family=family,
+        manifest={"packages": pkgs, "source_player": id_player,
+                  "reboot_required": bool(reboot_required), "requested_by": requested_by},
+        release_notes=f"{len(pkgs)} package(s) from bench player #{id_player}",
+    )
+    db.add(row)
+    await db.flush()
+    return row

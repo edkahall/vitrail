@@ -173,7 +173,7 @@ test('deployer un moteur : cible et fenetres choisies dans le tiroir', async ({ 
   await row.getByRole('button', { name: 'Deploy' }).click()
   await expect.poll(() => calls.deploy.length).toBe(1)
   expect(calls.deploy[0]).toMatchObject({ id_version: 77, strategy: 'scheduled',
-    strategy_params: { download_window: '02:00-05:00' }, targets: [{ target_type: 'org' }] })
+    strategy_params: { download_window: '02:00-05:00', wave_size: 1 }, targets: [{ target_type: 'org' }] })
   // Un déploiement qui ne vise personne n'est plus muet.
   await expect(page.getByTestId('deploy-msg').first()).toContainText('targets no player')
 })

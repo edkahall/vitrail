@@ -376,6 +376,12 @@ polkit.addRule(function(action, subject) {
 POLKITRULE
 systemctl restart polkit 2>/dev/null || true
 
+# Mises à jour contrôlées de l'OS (issue vitrail#6) : script root + unité systemd + règle polkit.
+# Le player ne fait que DÉPOSER une demande ; le script valide tout et n'installe que le manifeste
+# approuvé. Player déjà posé : `sudo bash scripts/install-os-update.sh` depuis une copie NEUVE de la
+# release, jamais depuis le dossier du player (que son compte peut réécrire).
+bash "$PLAYER_DIR/scripts/install-os-update.sh" "$SERVICE_USER"   || echo "    ! OS update helper not installed (scripts/install-os-update.sh)"
+
 # Choix du rôle NTP à l'install (comme le player linux). Le RPi se cale en
 # général en client sur l'hôte backend du LAN. Override non-interactif :
 # SF_NTP_ROLE=client|server|none  SF_NTP_SERVER=<ip>

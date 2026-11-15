@@ -153,6 +153,8 @@ _REVIEWED_BLOCKED = {
     "/api/v1/playlists/{id_playlist}/simulate-timeline",
     "/api/v1/pop/archives/{id_archive}/verify",
     "/api/v1/promo/validate",
+    # vitrail#6 : pas une lecture — fait tourner `apt-get update` sur l'appareil (clic explicite).
+    "/api/v1/updates/os/check",
 }
 
 

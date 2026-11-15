@@ -3,11 +3,13 @@
 import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, CheckCircle2, AlertTriangle, HelpCircle, Loader2, Trash2, Rocket, Plus, Search, Clock, Pause, Play, Upload, Cpu } from 'lucide-react'
+import { RefreshCw, CheckCircle2, AlertTriangle, HelpCircle, Loader2, Trash2, Rocket, Plus, Search, Clock, Pause, Play, Upload, Cpu, HardDrive } from 'lucide-react'
 import Topbar from '@/components/layout/Topbar'
 import Button from '@/components/ui/Button'
 import Drawer from '@/components/ui/Drawer'
+import NumberField from '@/components/ui/NumberField'
 import api from '@/lib/api'
+import OsUpdatesDrawer, { type OsUpdateInfo } from '@/components/updates/OsUpdatesDrawer'
 
 interface ParcRow {
   id_player: number; player_name: string; player_os: string; status: string
@@ -22,6 +24,8 @@ interface ParcRow {
   renderer_degraded: string | null
   // Moteur Electron courant (vitrail#5) ; null pour un player non Electron.
   electron_version: string | null
+  // Mises à jour OS (vitrail#6) : null si le player ne sait pas les relever (non Linux, ancien).
+  os_update: OsUpdateInfo | null
   site: string | null; groups: string[]
 }
 interface Version {
@@ -71,6 +75,10 @@ export default function UpdatesPage() {
   // récupérer, promouvoir, déployer ou supprimer — le serveur refuse les autres en 403).
   const { data: engineVersions = [] } = useQuery<Version[]>({
     queryKey: ['ota-versions-engine'], queryFn: () => api.get('/updates/versions?track=engine').then((r) => r.data),
+  })
+  // Manifestes OS (vitrail#6) : chargés ici aussi pour libeller leurs déploiements.
+  const { data: osVersions = [] } = useQuery<Version[]>({
+    queryKey: ['ota-versions-os'], queryFn: () => api.get('/updates/versions?track=os').then((r) => r.data),
   })
   const { data: operator } = useQuery<{ is_operator: boolean }>({
     queryKey: ['meta-operator'], queryFn: () => api.get('/meta/operator').then((r) => r.data),
@@ -203,11 +211,13 @@ export default function UpdatesPage() {
   const targetReady = depTarget.type === 'org' || depTarget.id != null
   // Corps d'un déploiement, partagé par le catalogue de la page et le tiroir moteur.
   const postDeployment = (id_version: number, target: { type: string; id: number | null },
-    opts: { download_window: string; install_window: string; force: boolean }) => {
+    opts: { download_window: string; install_window: string; force: boolean; wave_size?: number }) => {
     const sp: Record<string, unknown> = {}
     if (opts.download_window.trim()) sp.download_window = opts.download_window.trim()
     if (opts.install_window.trim()) sp.install_window = opts.install_window.trim()
     if (opts.force) sp.force = true
+    // Vagues (moteur) : N players à la fois, le suivant après la fin du précédent.
+    if (opts.wave_size) sp.wave_size = opts.wave_size
     const strategy = (sp.download_window || sp.install_window) ? 'scheduled' : 'immediate'
     const targets = target.type === 'org'
       ? [{ target_type: 'org' }]
@@ -277,10 +287,11 @@ export default function UpdatesPage() {
   // Libellés des lignes de déploiement : version déployée + nom du player cible.
   // Libellés des déploiements : player + firmware (le firmware porte model_family → « 9.1.140 · malibu »).
   const verById = useMemo(() => new Map(
-    [...versions, ...fwVersions, ...engineVersions].map((v) => [v.id_version,
+    [...versions, ...fwVersions, ...engineVersions, ...osVersions].map((v) => [v.id_version,
       v.track === 'engine' ? `Electron ${v.version} · ${v.model_family}`
+        : v.track === 'os' ? `OS ${v.version} · ${v.model_family}`
         : v.model_family && v.track === 'firmware' ? `${v.version} · ${v.model_family}` : v.version]),
-  ), [versions, fwVersions, engineVersions])
+  ), [versions, fwVersions, engineVersions, osVersions])
   const playerById = useMemo(() => new Map(players.map((p) => [p.id_player, p.player_name])), [players])
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
@@ -294,6 +305,7 @@ export default function UpdatesPage() {
 
   // ── Moteur Electron (vitrail#5) ─────────────────────────────────────────────
   const [engineOpen, setEngineOpen] = useState(false)
+  const [osOpen, setOsOpen] = useState(false)   // mises à jour OS (vitrail#6)
   const [engVersion, setEngVersion] = useState('')
   const [engFamilies, setEngFamilies] = useState<string[]>([...ENGINE_FAMILIES])
   const [engJobs, setEngJobs] = useState<EngineJob[]>([])
@@ -324,7 +336,7 @@ export default function UpdatesPage() {
   // ouvrir le tiroir pour déployer n'était « pas pratique du tout »). Défaut = un player : c'est la
   // forme d'un essai sur banc, la seule ouverte à une bêta pour un admin d'org.
   const [engTarget, setEngTarget] = useState<{ type: string; id: number | null }>({ type: 'player', id: null })
-  const [engOpts, setEngOpts] = useState({ download_window: '', install_window: '', force: false })
+  const [engOpts, setEngOpts] = useState({ download_window: '', install_window: '', force: false, wave_size: 1 })
   const engTargetReady = engTarget.type === 'org' || engTarget.id != null
   // Seuls les players Electron remontent une version de moteur : ce sont les seuls concernés.
   const electronPlayers = useMemo(() => players.filter((p) => !!p.electron_version), [players])
@@ -357,6 +369,9 @@ export default function UpdatesPage() {
             promouvoir et supprimer restent à l'exploitant du serveur (catalogue commun). */}
         <Button size="sm" onClick={() => { setEngErr(''); setEngineOpen(true) }}>
           <Cpu className="mr-1 h-4 w-4" />{t('updates.engine_btn')}
+        </Button>
+        <Button size="sm" onClick={() => setOsOpen(true)} data-testid="os-btn">
+          <HardDrive className="mr-1 h-4 w-4" />{t('updates.os_btn')}
         </Button>
         <Button size="sm" onClick={() => { impReset(); setImportOpen(true) }}>
           <Upload className="mr-1 h-4 w-4" />{t('updates.import_title')}
@@ -792,6 +807,12 @@ export default function UpdatesPage() {
                     onChange={(e) => setEngOpts({ ...engOpts, force: e.target.checked })} />
                   {t('updates.force')}
                 </label>
+                <label className="col-span-2 space-y-0.5 text-[11px] text-gray-500">
+                  <span>{t('updates.wave_size')}</span>
+                  <NumberField className={inp} min={1} max={50} value={engOpts.wave_size}
+                    onCommit={(v) => setEngOpts({ ...engOpts, wave_size: v ?? 1 })} title={t('updates.wave_hint')} />
+                  <span className="block text-gray-400">{t('updates.wave_hint')}</span>
+                </label>
               </div>
             </div>
             <ul className="divide-y divide-gray-100" data-testid="engine-versions">
@@ -847,6 +868,9 @@ export default function UpdatesPage() {
           </div>
         </div>
       </Drawer>
+
+      <OsUpdatesDrawer open={osOpen} onClose={() => setOsOpen(false)} players={players}
+        isOperator={isOperator} groups={groups} />
 
       <Drawer open={importOpen} onClose={() => setImportOpen(false)} title={t('updates.import_title')}>
         <div className="space-y-4">

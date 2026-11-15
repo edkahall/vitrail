@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+# Vitrail - controlled OS updates for Linux players (issue vitrail#6).
+#
+# Runs as ROOT, started by signflow-os-update.service. The player (unprivileged) writes a request
+# file and starts that unit through polkit (immune to NoNewPrivs, same pattern as the NTP helper).
+# It never runs a shell command for the player: it reads three possible actions, validates every
+# line, and refuses everything else.
+#
+#   check  refresh the package lists and describe what is pending (visibility, nothing installed)
+#   bench  upgrade this player (bench) and record exactly what changed: the MANIFEST
+#   apply  install the packages of an approved manifest, and nothing else
+#
+# "Install exactly this": `apply` first SIMULATES the install and refuses if apt wants to install
+# or remove anything outside the manifest (another dependency version, a removal...). A version
+# that is no longer in the archive gives state "obsolete": re-validate on the bench, never install
+# something else. It never downgrades and never installs a package that is not already installed
+# on the command line (new packages are only accepted as dependencies listed in the manifest).
+#
+# Files. Root never writes into a directory the player account can change (a planted symlink
+# would make root overwrite any file): the player only DROPS its request in its inbox, root MOVES
+# it into its own directory, refuses anything that is not a plain file, then reads it.
+#   /var/lib/signflow/os-update/request          inbox, written by the player
+#   /var/lib/signflow-os-update/status.json      pending updates (check)        root, world-readable
+#   /var/lib/signflow-os-update/result.json      outcome of the last bench/apply
+#   /var/lib/signflow-os-update/last-run.log     apt output of the last bench/apply
+set -uo pipefail
+umask 022
+
+HELPER_VERSION=1
+# Overridable for the tests only: the systemd unit sets no environment.
+STATE_DIR="${SIGNFLOW_OS_STATE_DIR:-/var/lib/signflow-os-update}"
+INBOX="${SIGNFLOW_OS_INBOX:-/var/lib/signflow/os-update}"
+REQ="$STATE_DIR/request.taken"
+STATUS="$STATE_DIR/status.json"
+RESULT="$STATE_DIR/result.json"
+RUNLOG="$STATE_DIR/last-run.log"
+LAST_UPGRADE="$STATE_DIR/last_upgrade"
+MAX_PKGS=3000
+
+export DEBIAN_FRONTEND=noninteractive LC_ALL=C LANG=C
+APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -o Dpkg::Use-Pty=0)
+# Packages whose upgrade only takes effect after a reboot.
+REBOOT_RE='^(linux-image|linux-modules|linux-headers|linux-firmware|raspberrypi-kernel|raspi-firmware|firmware-|libc6|systemd|udev|dbus|initramfs-tools)'
+
+mkdir -p "$STATE_DIR"
+chmod 755 "$STATE_DIR"
+
+json_str() {   # JSON string; inputs are package names/versions or short messages
+  local s
+  s=$(printf '%s' "$1" | tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')
+  printf '"%s"' "$s"
+}
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+boot_id() { cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown; }
+
+os_family() {
+  local id=unknown ver=0 arch
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    id=$( . /etc/os-release; echo "${ID:-unknown}")
+    ver=$( . /etc/os-release; echo "${VERSION_ID:-0}")
+  fi
+  arch=$(dpkg --print-architecture 2>/dev/null || echo unknown)
+  # Raspberry Pi OS says ID=debian, but its archive (archive.raspberrypi.com) is not Debian's:
+  # a manifest made on a Pi must never be applied to a plain Debian, and the other way round.
+  if compgen -G '/etc/apt/sources.list.d/raspi.*' >/dev/null; then id=raspios; fi
+  printf '%s-%s-%s' "$id" "$ver" "$arch" | tr -cd 'a-z0-9.-'
+}
+
+write_atomic() {   # write_atomic <file> <content>
+  local tmp
+  tmp=$(mktemp "$STATE_DIR/.tmp.XXXXXX") || return 1
+  printf '%s\n' "$2" > "$tmp" && chmod 644 "$tmp" && mv -f "$tmp" "$1"
+}
+
+# Installed packages, one "name:arch=version" per line, sorted.
+installed_list() {
+  dpkg-query -W -f='${db:Status-Abbrev} ${Package}:${Architecture}=${Version}\n' 2>/dev/null \
+    | awk '$1 ~ /^ii/ {print $2}' | sort
+}
+
+# Parse `apt-get -s` output into lines "name:arch=newversion|security(0/1)" (Inst) and
+# "REMOVE name" (Remv/Purg). The name may already carry ":arch" (foreign packages).
+# Fails CLOSED: an Inst line it cannot read becomes "UNPARSED ..." and `apply` refuses it.
+parse_sim() {
+  local line re='^Inst ([^ ]+)( \[[^]]*\])? \(([^ ]+) (.*)\[([^]]+)\]\)'
+  while IFS= read -r line; do
+    if [[ "$line" =~ $re ]]; then
+      local name="${BASH_REMATCH[1]}" ver="${BASH_REMATCH[3]}" origin="${BASH_REMATCH[4]}" arch="${BASH_REMATCH[5]}"
+      name="${name%%:*}"
+      local sec=0
+      [[ "$origin" == *-security* || "$origin" == *Security* ]] && sec=1
+      printf '%s:%s=%s|%s\n' "$name" "$arch" "$ver" "$sec"
+    elif [[ "$line" =~ ^(Remv|Purg)\ ([^ ]+) ]]; then
+      printf 'REMOVE %s\n' "${BASH_REMATCH[2]}"
+    elif [[ "$line" == Inst\ * ]]; then
+      printf 'UNPARSED %s\n' "${line:5:80}"
+    fi
+  done
+}
+
+pkgs_json() {   # stdin "name:arch=version" lines -> JSON array of objects
+  local first=1 line out="["
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    local na="${line%%=*}" v="${line#*=}"
+    [[ $first -eq 1 ]] || out+=","
+    first=0
+    out+="{\"name\":$(json_str "${na%%:*}"),\"arch\":$(json_str "${na#*:}"),\"version\":$(json_str "$v")}"
+  done
+  printf '%s]' "$out"
+}
+
+needs_reboot() {   # stdin: changed package lines
+  [[ -f /run/reboot-required || -f /var/run/reboot-required ]] && return 0
+  cut -d: -f1 | grep -Eq "$REBOOT_RE"
+}
+
+write_result() {   # write_result <action> <id> <manifest> <state> <error> <packages_json> <reboot 0/1>
+  local reboot=false
+  [[ "$7" == 1 ]] && reboot=true
+  write_atomic "$RESULT" "{\"helper_version\":$HELPER_VERSION,\"action\":$(json_str "$1"),\"id\":$(json_str "$2"),\"manifest\":$(json_str "$3"),\"family\":$(json_str "$(os_family)"),\"state\":$(json_str "$4"),\"error\":$(json_str "$5"),\"packages\":$6,\"reboot_required\":$reboot,\"boot_id\":$(json_str "$(boot_id)"),\"finished_at\":$(json_str "$(now_iso)")}"
+}
+
+do_check() {
+  local upd_err="" sim lines pending security
+  if ! apt-get update -qq >/dev/null 2>"$STATE_DIR/update.err"; then
+    upd_err=$(grep -m1 -E '^(E|W):' "$STATE_DIR/update.err" | cut -c1-200)
+    [[ -z "$upd_err" ]] && upd_err="apt-get update failed"
+  fi
+  # Same command as the bench, simulated: what a bench run would install now.
+  recover_dpkg
+  local sim_rc=0
+  sim=$(apt-get -s -o Debug::NoLocking=1 upgrade --with-new-pkgs 2>&1) || sim_rc=$?
+  if [[ $sim_rc -ne 0 && -z "$upd_err" ]]; then
+    # Un relevé qui échoue ne doit pas se lire « 0 en attente » (dpkg à demi configuré après une
+    # coupure, sources cassées…) — revue du 15/11.
+    upd_err=$(printf '%s\n' "$sim" | grep -m1 -E '^E:' | cut -c1-200)
+    [[ -z "$upd_err" ]] && upd_err="apt simulation failed"
+  fi
+  lines=$(printf '%s\n' "$sim" | parse_sim | grep -vE '^(REMOVE|UNPARSED) ' || true)
+  pending=$(printf '%s' "$lines" | grep -c . || true)
+  security=$(printf '%s\n' "$lines" | grep -c '|1$' || true)
+  local list
+  list=$(printf '%s\n' "$lines" | head -n 500 | cut -d'|' -f1 | pkgs_json)
+  local reboot=false
+  [[ -f /run/reboot-required || -f /var/run/reboot-required ]] && reboot=true
+  local last_change last_up=""
+  last_change=$(date -u -d "@$(stat -c %Y /var/lib/dpkg/status)" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "")
+  [[ -f "$LAST_UPGRADE" ]] && last_up=$(head -c 40 "$LAST_UPGRADE")
+  write_atomic "$STATUS" "{\"helper_version\":$HELPER_VERSION,\"family\":$(json_str "$(os_family)"),\"pending\":${pending:-0},\"security\":${security:-0},\"packages\":$list,\"reboot_required\":$reboot,\"last_change\":$(json_str "$last_change"),\"last_upgrade\":$(json_str "$last_up"),\"update_error\":$(json_str "$upd_err"),\"checked_at\":$(json_str "$(now_iso)")}"
+}
+
+schedule_reboot() {
+  # One minute: the player sees the result and reports it before the machine goes down; if it
+  # does not make it, it reports after the reboot (the result file survives).
+  shutdown -r +1 "Vitrail OS update" >/dev/null 2>&1 || systemctl reboot
+}
+
+recover_dpkg() {   # a previous run cut by a power loss leaves dpkg half-configured
+  dpkg --configure -a >>"$RUNLOG" 2>&1 || true
+}
+
+do_bench() {
+  local id="$1" before after changes
+  : > "$RUNLOG"
+  write_result bench "$id" "" running "" "[]" 0
+  recover_dpkg
+  before=$(installed_list)
+  if ! apt-get update >>"$RUNLOG" 2>&1; then
+    write_result bench "$id" "" failed "apt-get update failed" "[]" 0; do_check; return
+  fi
+  if ! apt-get -y "${APT_OPTS[@]}" upgrade --with-new-pkgs >>"$RUNLOG" 2>&1; then
+    local err
+    err=$(grep -E '^E:' "$RUNLOG" | tail -n1 | cut -c1-300)
+    after=$(installed_list)
+    changes=$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
+    write_result bench "$id" "" failed "${err:-apt-get upgrade failed}" "$(printf '%s\n' "$changes" | pkgs_json)" 0
+    do_check; return
+  fi
+  after=$(installed_list)
+  changes=$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
+  local reboot=0
+  if [[ -n "$changes" ]] && printf '%s\n' "$changes" | needs_reboot; then reboot=1; fi
+  [[ -n "$changes" ]] && now_iso > "$LAST_UPGRADE"
+  write_result bench "$id" "" ok "" "$(printf '%s\n' "$changes" | pkgs_json)" "$reboot"
+  do_check
+  [[ $reboot -eq 1 ]] && schedule_reboot
+}
+
+do_apply() {
+  local id="$1" manifest="$2"; shift 2
+  local -A want=()
+  local p
+  for p in "$@"; do want["${p%%=*}"]="${p#*=}"; done
+  : > "$RUNLOG"
+  write_result apply "$id" "$manifest" running "" "[]" 0
+  recover_dpkg
+  if ! apt-get update >>"$RUNLOG" 2>&1; then
+    write_result apply "$id" "$manifest" failed "apt-get update failed" "[]" 0; return
+  fi
+  local native
+  native=$(dpkg --print-architecture)
+  local -a args=()
+  local line na cur
+  while IFS= read -r line; do
+    na="${line%%=*}"; cur="${line#*=}"
+    [[ -n "${want[$na]+x}" ]] || continue
+    [[ "$cur" == "${want[$na]}" ]] && continue
+    # Never downgrade: a device already newer than the manifest stays as it is.
+    dpkg --compare-versions "$cur" gt "${want[$na]}" && continue
+    local arch="${na#*:}" name="${na%%:*}"
+    if [[ "$arch" == "$native" || "$arch" == all ]]; then args+=("$name=${want[$na]}")
+    else args+=("$name:$arch=${want[$na]}"); fi
+  done < <(installed_list)
+
+  if [[ ${#args[@]} -eq 0 ]]; then
+    write_result apply "$id" "$manifest" ok "" "[]" 0
+    do_check; return
+  fi
+
+  local sim rc
+  sim=$(apt-get -s "${APT_OPTS[@]}" install --no-install-recommends "${args[@]}" 2>&1); rc=$?
+  printf '%s\n' "$sim" >>"$RUNLOG"
+  if [[ $rc -ne 0 ]]; then
+    local err
+    err=$(printf '%s\n' "$sim" | grep -m1 -E '^E:' | cut -c1-300)
+    if printf '%s\n' "$sim" | grep -qE "Version '.*' for '.*' was not found"; then
+      write_result apply "$id" "$manifest" obsolete "${err:-a version of the manifest is no longer available}" "[]" 0
+    else
+      write_result apply "$id" "$manifest" failed "${err:-apt simulation failed}" "[]" 0
+    fi
+    return
+  fi
+  # Everything apt would do must be in the manifest, at the manifest's version.
+  local -a outside=()
+  local planned=""
+  while IFS= read -r line; do
+    if [[ "$line" == REMOVE\ * ]]; then outside+=("remove ${line#REMOVE }"); continue; fi
+    if [[ "$line" == UNPARSED\ * ]]; then outside+=("unreadable: ${line#UNPARSED }"); continue; fi
+    local pv="${line%%|*}" key ver
+    key="${pv%%=*}"; ver="${pv#*=}"
+    if [[ "${want[$key]:-}" != "$ver" ]]; then outside+=("$pv"); else planned+="$pv"$'\n'; fi
+  done < <(printf '%s\n' "$sim" | parse_sim)
+  if [[ ${#outside[@]} -gt 0 ]]; then
+    write_result apply "$id" "$manifest" failed "outside the manifest: ${outside[*]:0:8}" "[]" 0
+    return
+  fi
+  local before after changes
+  before=$(installed_list)
+  if ! apt-get -y "${APT_OPTS[@]}" install --no-install-recommends "${args[@]}" >>"$RUNLOG" 2>&1; then
+    local err
+    err=$(grep -E '^E:' "$RUNLOG" | tail -n1 | cut -c1-300)
+    write_result apply "$id" "$manifest" failed "${err:-apt-get install failed}" "[]" 0
+    do_check; return
+  fi
+  after=$(installed_list)
+  changes=$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))
+  local reboot=0
+  if [[ -n "$changes" ]] && printf '%s\n' "$changes" | needs_reboot; then reboot=1; fi
+  now_iso > "$LAST_UPGRADE"
+  write_result apply "$id" "$manifest" ok "" "$(printf '%s\n' "$changes" | pkgs_json)" "$reboot"
+  do_check
+  [[ $reboot -eq 1 ]] && schedule_reboot
+}
+
+# ── Request ──────────────────────────────────────────────────────────────────────────────────
+ACTION=check ID="" MANIFEST=""
+PKGS=()
+rm -f "$REQ"
+# The inbox's parent belongs to the player account: it could swap the inbox for a symlink to
+# any directory. Enter it by its PHYSICAL path and check where we landed; from then on every
+# path is relative to that directory, which a later swap cannot change (review of 15/11).
+# Expected physical path = physical parent (/var/lib/signflow: the player owns it but cannot
+# replace it, /var/lib is root's) + the inbox's name.
+INBOX_REAL=""
+EXPECTED="$(cd -P "$(dirname "$INBOX")" 2>/dev/null && pwd -P)/$(basename "$INBOX")"
+if [[ ! -L "$INBOX" ]] && cd -P "$INBOX" 2>/dev/null && [[ "$(pwd -P)" == "$EXPECTED" ]]; then INBOX_REAL="$INBOX"; fi
+if [[ -z "$INBOX_REAL" && ( -e "$INBOX" || -L "$INBOX" ) ]]; then echo "inbox is not a plain directory" >&2; exit 2; fi
+if [[ -n "$INBOX_REAL" ]] && [[ -e request || -L request ]]; then
+  # Consumed at once (restarting the unit never replays an install), and moved OUT of the
+  # player's reach before being looked at: a symlink, a directory or a FIFO is refused.
+  mv -f request "$REQ" || { echo "cannot take the request" >&2; exit 2; }
+  if [[ -L "$REQ" || ! -f "$REQ" ]]; then rm -rf "$REQ"; echo "request is not a plain file" >&2; exit 2; fi
+  ACTION=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    case "$line" in
+      action=*)   ACTION="${line#action=}" ;;
+      id=*)       ID="${line#id=}" ;;
+      manifest=*) MANIFEST="${line#manifest=}" ;;
+      pkg=*)      PKGS+=("${line#pkg=}") ;;
+      ''|'#'*)    ;;
+      *) echo "invalid request line" >&2; exit 2 ;;
+    esac
+  done < "$REQ"
+fi
+cd / || exit 2
+
+case "$ACTION" in check|bench|apply) ;; *) echo "invalid action" >&2; exit 2 ;; esac
+[[ -z "$ID" || "$ID" =~ ^[A-Za-z0-9_-]{1,64}$ ]] || { echo "invalid id" >&2; exit 2; }
+[[ "$MANIFEST" =~ ^[A-Za-z0-9._-]{0,40}$ ]] || { echo "invalid manifest" >&2; exit 2; }
+[[ ${#PKGS[@]} -le $MAX_PKGS ]] || { echo "too many packages" >&2; exit 2; }
+for p in "${PKGS[@]}"; do
+  [[ "$p" =~ ^[a-z0-9][a-z0-9+.-]*:[a-z0-9-]+=[A-Za-z0-9.+~:-]+$ ]] || { echo "invalid package: $p" >&2; exit 2; }
+done
+
+case "$ACTION" in
+  bench) [[ -n "$ID" ]] || { echo "bench needs an id" >&2; exit 2; } ;;
+  apply) [[ -n "$ID" && -n "$MANIFEST" && ${#PKGS[@]} -gt 0 ]]            || { echo "apply needs id, manifest and packages" >&2; exit 2; } ;;
+esac
+
+exec 9>/run/signflow-os-update.lock
+flock -n 9 || { echo "another run is in progress" >&2; exit 3; }
+
+case "$ACTION" in
+  check) do_check ;;
+  bench) do_bench "$ID" ;;
+  apply) do_apply "$ID" "$MANIFEST" "${PKGS[@]}" ;;
+esac
+exit 0

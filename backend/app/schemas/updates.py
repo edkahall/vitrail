@@ -28,8 +28,15 @@ class UpdateVersionRead(BaseModel):
     release_notes: str | None = None
     release_notes_fr: str | None = None
     min_firmware_version: str | None = None
+    # Manifeste d'une version `os` (vitrail#6) : {"packages": [...], "source_player", ...}.
+    manifest: dict | None = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class OsPlayerRequest(BaseModel):
+    """Mises à jour OS (vitrail#6) : player visé par un relevé ou une mise à jour de banc."""
+    id_player: int
 
 
 class EngineFetchRequest(BaseModel):

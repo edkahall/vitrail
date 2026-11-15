@@ -2319,6 +2319,12 @@ async def _resolve_sync_payload(db, id_player: int) -> dict:
     except Exception as exc:  # noqa: BLE001
         payload["engine_update"] = None
         print(f"[WS] OTA engine directive échec player {id_player}: {exc!r}")
+    # OS (vitrail#6) : clé SÉPARÉE elle aussi — elle porte le manifeste à installer.
+    try:
+        payload["os_update"] = await ota.directive_for_player(db, id_player, track=ota.OS_TRACK)
+    except Exception as exc:  # noqa: BLE001
+        payload["os_update"] = None
+        print(f"[WS] OTA os directive échec player {id_player}: {exc!r}")
     return payload
 
 
@@ -3271,6 +3277,29 @@ async def ws_player(
                     continue
                 if msg.get("type") == "player:event":
                     await _audit_player_event(db, id_player, msg)
+                    continue
+                if msg.get("type") == "os:manifest":
+                    # Relevé du banc (vitrail#6) : accepté SEULEMENT s'il répond à une demande de
+                    # l'exploitant pour ce player (os_updates.take_bench). Devient une version
+                    # `os` BÊTA, que l'exploitant approuvera (promotion) après avoir testé le banc.
+                    try:
+                        from app.services import os_updates
+                        req = await os_updates.take_bench(id_player, str(msg.get("request_id") or ""))
+                        if req is None:
+                            print(f"[WS] os:manifest sans demande valable, player {id_player}")
+                        elif msg.get("state") == "ok":
+                            row = await ota.register_os_manifest(
+                                db, id_player, str(msg.get("family") or ""), msg.get("packages"),
+                                bool(msg.get("reboot_required")), req.get("id_user"))
+                            await db.commit()
+                            print(f"[WS] os:manifest player {id_player}: "
+                                  f"{row.version if row else 'rien a mettre a jour'}")
+                    except ota.OsManifestRejected as exc:
+                        await db.rollback()
+                        print(f"[WS] os:manifest refusé player {id_player}: {exc}")
+                    except Exception as exc:  # noqa: BLE001
+                        await db.rollback()
+                        print(f"[WS] os:manifest échec player {id_player}: {exc!r}")
                     continue
                 if msg.get("type") == "update:status":
                     # OTA §XXX slice 2 : le player reporte l'avancement de son apply. On met à jour

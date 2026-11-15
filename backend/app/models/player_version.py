@@ -26,7 +26,7 @@ class CmsPlayerUpdateVersion(Base):
     __tablename__ = "cms_player_update_versions"
 
     id_version: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    # server | player
+    # server | player | engine | firmware | os
     track: Mapped[str] = mapped_column(String(20), nullable=False)
     version: Mapped[str] = mapped_column(String(20), nullable=False)
     # stable | beta | lts
@@ -52,6 +52,10 @@ class CmsPlayerUpdateVersion(Base):
     # (jamais servir un renderer à un device sous le minimum) et par l'orchestration de
     # `ota.create_deployment` (firmware épinglé poussé D'ABORD, ou signal à l'admin).
     min_firmware_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # Mises à jour OS contrôlées (vitrail#6, track='os') : le MANIFESTE relevé sur le banc —
+    # {"packages": [{"name","arch","version"}…], "source_player", "reboot_required", "requested_by"}.
+    # Le parc installe exactement ces paquets et rien d'autre. NULL pour les autres pistes.
+    manifest: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=text("now()"), nullable=False)
 
     __table_args__ = (
